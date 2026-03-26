@@ -13,8 +13,7 @@
     <!-- Custom Theme CSS -->
     <link rel="stylesheet" href="{{ asset('css/custom.css') }}">
     
-    <!-- Styles / Scripts -->
-    @vite(['resources/css/app.css', 'resources/js/app.js'])
+    <!-- Vite disabled for non-node production -->
 <style>
   /* ===== Base styles ===== */
   * { box-sizing: border-box; margin: 0; padding: 0; }
