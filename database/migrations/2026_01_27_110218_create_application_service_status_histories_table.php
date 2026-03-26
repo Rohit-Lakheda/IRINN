@@ -1,0 +1,39 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        Schema::create('application_service_status_histories', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('application_id')->constrained('applications')->onDelete('cascade');
+
+            $table->string('status'); // live|suspended|disconnected
+            $table->date('effective_from')->nullable();
+            $table->date('effective_to')->nullable();
+
+            $table->string('changed_by_type'); // admin|superadmin|system
+            $table->unsignedBigInteger('changed_by_id')->nullable();
+            $table->text('notes')->nullable();
+
+            $table->timestamps();
+
+            $table->index(['application_id', 'status']);
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        Schema::dropIfExists('application_service_status_histories');
+    }
+};
