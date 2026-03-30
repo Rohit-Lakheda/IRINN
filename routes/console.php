@@ -1,13 +1,12 @@
 <?php
 
-use Illuminate\Foundation\Inspiring;
-use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\Schedule;
-
 use App\Models\Application;
 use App\Models\GstVerification;
 use App\Models\Registration;
 use App\Models\UserKycProfile;
+use Illuminate\Foundation\Inspiring;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Schedule;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
@@ -142,43 +141,9 @@ Artisan::command('irinn:backfill-application-kyc', function () {
     $this->info("Backfill complete. Updated {$count} IRINN applications.");
 })->purpose('Backfill IRINN applications with registration and KYC details (including GST pincode in billing address)');
 
-// Schedule payment reminders to run daily
-Schedule::command('payments:send-reminders')
-    ->daily()
-    ->at('09:00')
-    ->timezone('Asia/Kolkata');
-
 // Schedule ticket escalation to run every hour
 Schedule::command('tickets:escalate')
     ->hourly()
-    ->timezone('Asia/Kolkata');
-
-// Schedule IX invoice generation to run on 1st of every month (LIVE members only)
-Schedule::command('ix:generate-monthly-invoices')
-    ->monthlyOn(1, '00:10')
-    ->timezone('Asia/Kolkata');
-
-// Schedule IX membership invoices to run on 1st April each year (new financial year)
-Schedule::command('ix:generate-membership-invoices')
-    ->yearlyOn(4, 1, '01:00')
-    ->timezone('Asia/Kolkata');
-
-// Schedule plan changes auto-update to run daily
-Schedule::command('plan-changes:auto-update')
-    ->daily()
-    ->at('00:01')
-    ->timezone('Asia/Kolkata');
-
-// Schedule membership invoice processing to run daily
-Schedule::command('membership:process-invoices')
-    ->daily()
-    ->at('10:00')
-    ->timezone('Asia/Kolkata');
-
-// Schedule wallet balance check to run daily
-Schedule::command('wallet:check-balance-notifications')
-    ->daily()
-    ->at('11:00')
     ->timezone('Asia/Kolkata');
 
 // Schedule overdue invoice email reminders to run daily

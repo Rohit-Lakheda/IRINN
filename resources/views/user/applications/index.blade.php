@@ -25,23 +25,15 @@
         <div class="card-body p-3">
             <form method="GET" action="{{ route('user.applications.index') }}" id="applicationFilterForm" class="theme-forms">
                 <div class="row g-3 align-items-end">
-                    <div class="col-md-5">
+                    <div class="col-md-8">
                         <label for="search" class="form-label small mb-1">Search Applications</label>
                         <input type="text" 
                                name="search" 
                                id="searchInput"
                                class="form-control" 
-                               placeholder="Application ID, Membership ID, IPv4/IPv6 prefix, Node, Location, IP, Stage, Status..."
+                               placeholder="Application ID, Membership ID, IPv4/IPv6 prefix, stage..."
                                value="{{ request('search') }}"
                                autocomplete="off">
-                    </div>
-                    <div class="col-md-3">
-                        <label for="live_filter" class="form-label small mb-1">Filter by Status</label>
-                        <select name="live_filter" id="liveFilterSelect" class="form-select">
-                            <option value="all" {{ $liveFilter === 'all' ? 'selected' : '' }}>All ({{ $totalCount ?? 0 }})</option>
-                            <option value="live" {{ $liveFilter === 'live' ? 'selected' : '' }}>Live ({{ $liveCount ?? 0 }})</option>
-                            <option value="not_live" {{ $liveFilter === 'not_live' ? 'selected' : '' }}>Not Live ({{ $notLiveCount ?? 0 }})</option>
-                        </select>
                     </div>
                     <div class="col-md-4">
                         <div class="d-flex gap-2">
@@ -68,7 +60,6 @@
                                     <th>Application ID</th>
                                     <th>Application Details</th>
                                     <th>Current Stage</th>
-                                    <th>Status</th>
                                     <th>Submitted At</th>
                                     <th class="text-end pe-4">Actions</th>
                                 </tr>
@@ -76,39 +67,39 @@
                             <tbody>
                                 @foreach($applications as $application)
                                 @php
-                                    $paymentData = $application->application_type === 'IX'
-                                        ? ($application->application_data['payment'] ?? null)
-                                        : ($application->application_data['part5'] ?? null);
-                                    $isIxDraftAwaitingPayment = $application->application_type === 'IX'
-                                        && $application->status === 'draft'
-                                        && ($paymentData['status'] ?? null) === 'pending';
+                                    $paymentData = $application->application_data['part5'] ?? null;
                                     $isIrinnDraftAwaitingPayment = $application->application_type === 'IRINN'
                                         && $application->status === 'draft'
                                         && ($paymentData['payment_status'] ?? null) === 'pending';
-                                    $locationData = $application->application_data['location'] ?? null;
-                                    $portSelection = $application->application_data['port_selection'] ?? null;
-                                    $irinnResources = $application->application_type === 'IRINN' 
-                                        ? ($application->application_data['part2'] ?? null) 
+                                    $irinnResources = $application->application_type === 'IRINN'
+                                        ? ($application->application_data['part2'] ?? null)
                                         : null;
                                 @endphp
                                 <tr class="align-middle">
                                     <td>
-                                        @if($application->application_type === 'IRINN')
-                                            <div><strong>App ID:</strong> {{ $application->application_id }}</div>
-                                            @if($application->membership_id)
-                                                <div class="small text-muted">Membership: {{ $application->membership_id }}</div>
-                                            @endif
-                                        @else
-                                            @if($application->membership_id)
-                                                <strong>{{ $application->membership_id }}</strong>
-                                            @else
-                                                <span class="text-muted">N/A</span>
-                                            @endif
+                                        <div><strong>App ID:</strong> {{ $application->application_id }}</div>
+                                        @if($application->membership_id)
+                                            <div class="small text-muted">Membership: {{ $application->membership_id }}</div>
                                         @endif
                                     </td>
                                     <td>
                                         @if($application->application_type === 'IRINN')
-                                            @if($irinnResources)
+                                            @if($application->hasIrinnNormalizedData())
+                                                <div class="mb-1">
+                                                    <strong>IP resources:</strong>
+                                                </div>
+                                                <div class="small text-muted">
+                                                    @if(filled($application->irinn_ipv4_resource_size))
+                                                        <div>IPv4: <strong class="text-dark">{{ $application->irinn_ipv4_resource_size }}</strong></div>
+                                                    @endif
+                                                    @if(filled($application->irinn_ipv6_resource_size))
+                                                        <div>IPv6: <strong class="text-dark">{{ $application->irinn_ipv6_resource_size }}</strong></div>
+                                                    @endif
+                                                    @if($application->irinn_asn_required)
+                                                        <div>ASN: <strong class="text-dark">Required</strong></div>
+                                                    @endif
+                                                </div>
+                                            @elseif($irinnResources)
                                                 <div class="mb-1">
                                                     <strong>IP Resources:</strong>
                                                 </div>
@@ -127,30 +118,7 @@
                                                 <span class="text-muted">N/A</span>
                                             @endif
                                         @else
-                                            @if($locationData)
-                                                <div class="mb-1">
-                                                    <strong>{{ $locationData['name'] ?? 'N/A' }}</strong>
-                                                    @if(isset($locationData['state']))
-                                                        <small class="text-muted">, {{ $locationData['state'] }}</small>
-                                                    @endif
-                                                </div>
-                                            @else
-                                                <div class="mb-1"><span class="text-muted">N/A</span></div>
-                                            @endif
-                                            
-                                            <div class="small text-muted">
-                                                @if($application->assigned_ip)
-                                                    <div>IP: <strong class="text-dark">{{ $application->assigned_ip }}</strong></div>
-                                                @endif
-                                                @if($application->assigned_port_number)
-                                                    <div>Port: <strong class="text-dark">{{ $application->assigned_port_number }}</strong></div>
-                                                @endif
-                                                @if($application->assigned_port_capacity)
-                                                    <div>Capacity: <strong class="text-dark">{{ $application->assigned_port_capacity }}</strong></div>
-                                                @elseif($portSelection && isset($portSelection['capacity']))
-                                                    <div>Capacity: <strong class="text-dark">{{ $portSelection['capacity'] }}</strong></div>
-                                                @endif
-                                            </div>
+                                            <span class="text-muted">N/A</span>
                                         @endif
                                     </td>
                                     <td>
@@ -178,50 +146,28 @@
                                         @endphp
                                         <span class="badge {{ $stageClass }}">{{ $application->current_stage }}</span>
                                     </td>
-                                    <td>
-                                        @if($application->application_type === 'IRINN')
-                                            @if($application->status === 'billing')
-                                                <span class="badge badge-status-live">LIVE</span>
-                                            @else
-                                                <span class="badge badge-status-notlive">NOT LIVE</span>
-                                            @endif
-                                        @else
-                                            @if($application->is_active && $application->service_activation_date)
-                                                <span class="badge badge-status-live">LIVE</span>
-                                            @else
-                                                <span class="badge badge-status-notlive">NOT LIVE</span>
-                                            @endif
-                                        @endif
-                                    </td>
                                     <td>{{ $application->submitted_at ? $application->submitted_at->format('d M Y, h:i A') : 'N/A' }}</td>
                                     <td style="vertical-align: middle;">
                                         <div class="d-flex flex-wrap gap-2 align-items-center justify-content-end">
                                             <a href="{{ route('user.applications.show', $application->id) }}" class="btn btn-primary">
                                                 View Details
                                             </a>
-                                            <a href="{{ route('user.applications.gst.edit', $application->id) }}" class="btn btn-success">
-                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="me-1" viewBox="0 0 16 16">
-                                                    <path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0Zm3.5 7.5a.5.5 0 0 1 0 1H5.707l2.147 2.146a.5.5 0 0 1-.708.708l-3-3a.5.5 0 0 1 0-.708l3-3a.5.5 0 1 1 .708.708L5.707 7.5H11.5Z"/>
-                                                </svg>
-                                                Update GST
-                                            </a>
+                                            @if($application->application_type === 'IRINN' && $application->status === 'resubmission_requested')
+                                                <a href="{{ route('user.applications.irin.resubmit', $application->id) }}" class="btn btn-warning">
+                                                    Edit application
+                                                </a>
+                                            @endif
 
-                                            @if($isIxDraftAwaitingPayment || $isIrinnDraftAwaitingPayment)
+                                            @if($isIrinnDraftAwaitingPayment)
                                                 @php
                                                     $user = \App\Models\Registration::find(session('user_id'));
                                                     $wallet = $user ? $user->wallet : null;
                                                     $walletBalance = $wallet && $wallet->status === 'active' ? (float) $wallet->balance : 0;
-                                                    if ($application->application_type === 'IX') {
-                                                        $applicationPricing = \App\Models\IxApplicationPricing::getActive();
-                                                        $applicationAmount = $applicationPricing ? (float) $applicationPricing->total_amount : 1180.00;
-                                                    } else {
-                                                        // IRINN: Get amount from application data
-                                                        $applicationAmount = (float) ($paymentData['total_amount'] ?? 1180.00);
-                                                    }
+                                                    $applicationAmount = (float) ($paymentData['total_amount'] ?? 1180.00);
                                                     $canPayWithWallet = $wallet && $wallet->status === 'active' && $walletBalance >= $applicationAmount;
                                                 @endphp
                                                 @if($canPayWithWallet)
-                                                    <form action="{{ $application->application_type === 'IX' ? route('user.applications.ix.pay-now-with-wallet', $application->id) : route('user.applications.irin.pay-now-with-wallet', $application->id) }}" method="POST" class="d-inline me-2">
+                                                    <form action="{{ route('user.applications.irin.pay-now-with-wallet', $application->id) }}" method="POST" class="d-inline me-2">
                                                         @csrf
                                                         <button type="submit" class="btn btn-success" onclick="return confirm('Pay ₹{{ number_format($applicationAmount, 2) }} from advance amount?')">
                                                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="me-1" viewBox="0 0 16 16">
@@ -231,25 +177,14 @@
                                                         </button>
                                                     </form>
                                                 @endif
-                                                @if($application->application_type === 'IX')
-                                                    <a href="{{ route('user.applications.ix.pay-now', $application->id) }}" class="btn btn-primary">
+                                                <form action="{{ route('user.applications.irin.store-new') }}" method="POST" class="d-inline" id="irinn-pay-form-{{ $application->id }}">
+                                                    @csrf
+                                                    <input type="hidden" name="action" value="submit">
+                                                    <input type="hidden" name="application_id" value="{{ $application->id }}">
+                                                    <button type="submit" class="btn btn-primary">
                                                         Pay Now
-                                                    </a>
-                                                @else
-                                                    @php
-                                                        // For IRINN, we need to create payment transaction and redirect to PayU
-                                                        $paymentData = $application->application_data['part5'] ?? null;
-                                                        $totalAmount = (float) ($paymentData['total_amount'] ?? 1180.00);
-                                                    @endphp
-                                                    <form action="{{ route('user.applications.irin.store-new') }}" method="POST" class="d-inline" id="irinn-pay-form-{{ $application->id }}">
-                                                        @csrf
-                                                        <input type="hidden" name="action" value="submit">
-                                                        <input type="hidden" name="application_id" value="{{ $application->id }}">
-                                                        <button type="submit" class="btn btn-primary">
-                                                            Pay Now
-                                                        </button>
-                                                    </form>
-                                                @endif
+                                                    </button>
+                                                </form>
                                             @endif
                                             
                                             @php
@@ -273,11 +208,6 @@
                         {{ $applications->links('vendor.pagination.bootstrap-5') }}
                     </div>
 
-                    <div class="mt-4 d-flex justify-content-end">
-                        <a href="{{ route('user.irinn.create') }}" class="btn btn-primary btn-irinn-new">
-                            <i class="bi bi-plus-circle me-1"></i> New IRINN Application
-                        </a>
-                    </div>
                 @else
                     <div class="text-center py-5">
                         <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" fill="currentColor" viewBox="0 0 16 16" class="text-muted mb-3">
@@ -301,13 +231,12 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const searchInput = document.getElementById('searchInput');
-    const liveFilterSelect = document.getElementById('liveFilterSelect');
     const filterForm = document.getElementById('applicationFilterForm');
     
     let searchTimeout;
     
     // Dynamic search - filters as user types (no button needed)
-    if (searchInput) {
+    if (searchInput && filterForm) {
         searchInput.addEventListener('input', function() {
             clearTimeout(searchTimeout);
             
@@ -315,13 +244,6 @@ document.addEventListener('DOMContentLoaded', function() {
             searchTimeout = setTimeout(function() {
                 filterForm.submit();
             }, 500);
-        });
-    }
-    
-    // Filter change - submit immediately
-    if (liveFilterSelect) {
-        liveFilterSelect.addEventListener('change', function() {
-            filterForm.submit();
         });
     }
 

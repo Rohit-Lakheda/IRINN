@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Mail\IxReactivationInvoiceMail;
+use App\Mail\ReactivationInvoiceMail;
 use App\Models\Admin;
 use App\Models\ApplicationReactivationRequest;
 use App\Models\ReactivationSetting;
@@ -100,8 +100,8 @@ class AdminReactivationRequestController extends Controller
             $adminId = session('admin_id');
             $admin = Admin::with('roles')->findOrFail($adminId);
 
-            if (! $admin->hasRole('ix_account')) {
-                return back()->with('error', 'Only IX Account can approve reactivation requests.');
+            if (! $admin->hasRole('billing')) {
+                return back()->with('error', 'Only billing admins can approve reactivation requests.');
             }
 
             $validated = $request->validate([
@@ -139,7 +139,7 @@ class AdminReactivationRequestController extends Controller
 
             // Send mail to user
             try {
-                Mail::to($application->user->email)->send(new IxReactivationInvoiceMail(
+                Mail::to($application->user->email)->send(new ReactivationInvoiceMail(
                     userName: $application->user->fullname,
                     applicationId: $application->application_id,
                     invoiceNumber: $invoice->invoice_number,
@@ -195,8 +195,8 @@ class AdminReactivationRequestController extends Controller
             $adminId = session('admin_id');
             $admin = Admin::with('roles')->findOrFail($adminId);
 
-            if (! $admin->hasRole('ix_account')) {
-                return back()->with('error', 'Only IX Account can set reactivation date.');
+            if (! $admin->hasRole('billing')) {
+                return back()->with('error', 'Only billing admins can set reactivation date.');
             }
 
             $validated = $request->validate([

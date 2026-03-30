@@ -181,6 +181,25 @@
                                             $data = $application->application_data ?? [];
                                         @endphp
                                         @if($application->application_type === 'IRINN')
+                                            @if($application->hasIrinnNormalizedData())
+                                                <div>
+                                                    @if(filled($application->irinn_ipv4_resource_size))
+                                                        <div style="color:#1e3a8a;font-size:0.875rem;"><strong>IPv4:</strong> {{ $application->irinn_ipv4_resource_size }}</div>
+                                                    @endif
+                                                    @if(filled($application->irinn_ipv6_resource_size))
+                                                        <div style="color:#1e3a8a;font-size:0.875rem;"><strong>IPv6:</strong> {{ $application->irinn_ipv6_resource_size }}</div>
+                                                    @endif
+                                                    @if(! filled($application->irinn_ipv4_resource_size) && ! filled($application->irinn_ipv6_resource_size))
+                                                        <div class="text-muted small">No IP resource sizes recorded</div>
+                                                    @endif
+                                                    <div class="mt-1">
+                                                        <small class="text-muted">ASN Required:</small>
+                                                        <span style="color:#1e3a8a;font-size:0.85rem;">
+                                                            {{ $application->irinn_asn_required ? 'Yes' : 'No' }}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            @else
                                             @php
                                                 $part2 = $data['part2'] ?? [];
                                                 $ipv4 = $part2['ipv4_prefix'] ?? null;
@@ -204,6 +223,7 @@
                                                     </span>
                                                 </div>
                                             </div>
+                                            @endif
                                         @else
                                             @php
                                                 $locationData = $data['location'] ?? null;
@@ -224,12 +244,14 @@
                                     <td>
                                         @if($application->application_type === 'IRINN')
                                             {{-- IRINN simplified workflow statuses --}}
-                                            @if($application->status === 'helpdesk')
+                                            @if(in_array($application->status, ['helpdesk', 'submitted'], true))
                                                 <span class="badge bg-warning text-dark">Helpdesk</span>
                                             @elseif($application->status === 'hostmaster')
                                                 <span class="badge bg-info text-dark">Hostmaster</span>
                                             @elseif($application->status === 'billing')
                                                 <span class="badge bg-success">Billing</span>
+                                            @elseif($application->status === 'billing_approved')
+                                                <span class="badge bg-success">Billing approved</span>
                                             @elseif($application->status === 'resubmission_requested')
                                                 <span class="badge bg-danger">Resubmission Requested</span>
                                             @else

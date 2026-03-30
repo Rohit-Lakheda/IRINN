@@ -15,8 +15,6 @@ class DatabaseSeeder extends Seeder
             RoleSeeder::class,
             PaymentTypeSeeder::class,
             IpPricingSeeder::class,
-            IxLocationSeeder::class,
-            IxPortPricingSeeder::class,
         ]);
     }
 }

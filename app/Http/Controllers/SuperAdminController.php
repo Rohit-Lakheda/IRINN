@@ -8,8 +8,6 @@ use App\Models\Application;
 use App\Models\ApplicationStatusHistory;
 use App\Models\GstVerification;
 use App\Models\Invoice;
-use App\Models\IxLocation;
-use App\Models\IxMembershipFeeSetting;
 use App\Models\McaVerification;
 use App\Models\Message;
 use App\Models\NodalOfficerEmail;
@@ -26,7 +24,6 @@ use App\Models\TicketAttachment;
 use App\Models\TicketMessage;
 use App\Models\UdyamVerification;
 use App\Models\UserKycProfile;
-use App\Services\IxMembershipInvoiceService;
 use Exception;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
@@ -83,97 +80,6 @@ class SuperAdminController extends Controller
         }
     }
 
-    public function ixMembershipFee()
-    {
-        try {
-            $superAdminId = session('superadmin_id');
-            $superAdmin = SuperAdmin::findOrFail($superAdminId);
-
-            $setting = IxMembershipFeeSetting::current();
-            $membershipService = app(IxMembershipInvoiceService::class);
-            $eligibleUserIds = $membershipService->getEligibleUserIds();
-            $fy = $membershipService->financialYearForDate(now('Asia/Kolkata'));
-
-            return view('superadmin.ix-membership-fee', compact('superAdmin', 'setting', 'eligibleUserIds', 'fy'));
-        } catch (Exception $e) {
-            Log::error('Error loading IX membership fee page: '.$e->getMessage());
-
-            return redirect()->route('superadmin.dashboard')
-                ->with('error', 'Unable to load IX membership fee settings.');
-        }
-    }
-
-    public function updateIxMembershipFee(Request $request)
-    {
-        try {
-            $superAdminId = session('superadmin_id');
-            $superAdmin = SuperAdmin::findOrFail($superAdminId);
-
-            $validated = $request->validate([
-                'fee_amount' => 'required|numeric|min:0',
-                'gst_percentage' => 'required|numeric|min:0|max:100',
-            ]);
-
-            IxMembershipFeeSetting::query()->create([
-                'fee_amount' => (float) $validated['fee_amount'],
-                'currency' => 'INR',
-                'gst_percentage' => (float) $validated['gst_percentage'],
-                'updated_by' => $superAdmin->id,
-            ]);
-
-            return back()->with('success', 'IX membership fee updated successfully.');
-        } catch (Exception $e) {
-            Log::error('Error updating IX membership fee: '.$e->getMessage());
-
-            return back()->with('error', 'Unable to update IX membership fee. Please try again.');
-        }
-    }
-
-    public function generateIxMembershipInvoices(Request $request)
-    {
-        try {
-            $superAdminId = session('superadmin_id');
-            SuperAdmin::findOrFail($superAdminId);
-
-            $membershipService = app(IxMembershipInvoiceService::class);
-            $fy = $membershipService->financialYearForDate(now('Asia/Kolkata'));
-            $userId = $request->filled('user_id') ? (int) $request->input('user_id') : null;
-
-            if ($userId) {
-                if ($membershipService->alreadyExistsForUserInPeriod($userId, $fy['period'])) {
-                    return back()->with('info', 'This customer already has a membership invoice for the current financial year.');
-                }
-                $invoice = $membershipService->generateForUser(
-                    $userId,
-                    $fy['start'],
-                    $fy['end'],
-                    $fy['period'],
-                    null
-                );
-
-                return $invoice
-                    ? back()->with('success', "Membership invoice {$invoice->invoice_number} generated for customer.")
-                    : back()->with('error', 'Could not generate membership invoice (customer may not be eligible).');
-            }
-
-            $result = $membershipService->generateForEligibleUsers(
-                $fy['start'],
-                $fy['end'],
-                $fy['period'],
-                null
-            );
-
-            return back()->with(
-                'success',
-                "Membership invoices: {$result['generated']} generated, {$result['skipped']} already exist, {$result['failed']} failed."
-            );
-        } catch (Exception $e) {
-            Log::error('Error generating IX membership invoices: '.$e->getMessage());
-
-            return back()->with('error', 'Unable to generate membership invoices: '.$e->getMessage());
-        }
-    }
-
     /**
      * Display the SuperAdmin dashboard.
      */
@@ -212,15 +118,10 @@ class SuperAdminController extends Controller
                 ->get()
                 ->keyBy('actionable_id');
 
-            // Admin and Roles Chart Data - New IX Workflow Roles
             $adminsWithRoles = Admin::with('roles')->where('is_super_admin', false)->get();
-            // New IX workflow roles
-            $roleSlugs = [
-                'ix_processor', 'ix_legal', 'ix_head', 'ceo', 'nodal_officer', 'ix_tech_team', 'ix_account',
-            ];
+            $roleSlugs = ['helpdesk', 'hostmaster', 'billing'];
             $roles = Role::whereIn('slug', $roleSlugs)->get()->keyBy('slug');
 
-            // Application Details Chart Data (all visible, is_active shows live status)
             $totalApplications = Application::count();
             $fullyApproved = Application::where(function ($query) {
                 $query->where('status', 'approved')
@@ -228,60 +129,14 @@ class SuperAdminController extends Controller
             })
                 ->count();
 
-            // New IX Workflow Roles Statistics (all visible, is_active shows live status)
-            $ixProcessorApproved = Application::where('application_type', 'IX')
-                ->whereIn('status', ['processor_forwarded_legal', 'legal_forwarded_head', 'head_forwarded_ceo', 'ceo_approved', 'port_assigned', 'ip_assigned', 'invoice_pending', 'payment_verified', 'approved'])
-                ->count();
-            $ixProcessorPending = Application::where('application_type', 'IX')
-                ->whereIn('status', ['submitted', 'resubmitted', 'processor_resubmission', 'legal_sent_back', 'head_sent_back'])
-                ->count();
-
-            $ixLegalApproved = Application::where('application_type', 'IX')
-                ->whereIn('status', ['legal_forwarded_head', 'head_forwarded_ceo', 'ceo_approved', 'port_assigned', 'ip_assigned', 'invoice_pending', 'payment_verified', 'approved'])
-                ->count();
-            $ixLegalPending = Application::where('application_type', 'IX')
-                ->where('status', 'processor_forwarded_legal')
-                ->count();
-
-            $ixHeadApproved = Application::where('application_type', 'IX')
-                ->whereIn('status', ['head_forwarded_ceo', 'ceo_approved', 'port_assigned', 'ip_assigned', 'invoice_pending', 'payment_verified', 'approved'])
-                ->count();
-            $ixHeadPending = Application::where('application_type', 'IX')
-                ->where('status', 'legal_forwarded_head')
-                ->count();
-
-            $ceoApproved = Application::where('application_type', 'IX')
-                ->whereIn('status', ['ceo_approved', 'port_assigned', 'ip_assigned', 'invoice_pending', 'payment_verified', 'approved'])
-                ->count();
-            $ceoPending = Application::where('application_type', 'IX')
-                ->where('status', 'head_forwarded_ceo')
-                ->count();
-
-            $nodalOfficerApproved = Application::where('application_type', 'IX')
-                ->whereIn('status', ['port_assigned', 'ip_assigned', 'invoice_pending', 'payment_verified', 'approved'])
-                ->count();
-            $nodalOfficerPending = Application::where('application_type', 'IX')
-                ->where('status', 'ceo_approved')
-                ->count();
-
-            $ixTechTeamApproved = Application::where('application_type', 'IX')
-                ->whereIn('status', ['ip_assigned', 'invoice_pending', 'payment_verified', 'approved'])
-                ->count();
-            $ixTechTeamPending = Application::where('application_type', 'IX')
-                ->where('status', 'port_assigned')
-                ->count();
-
-            $ixAccountApproved = Application::where('application_type', 'IX')
-                ->whereIn('status', ['payment_verified', 'approved'])
-                ->count();
-            $ixAccountPending = Application::where('application_type', 'IX')
-                ->whereIn('status', ['ip_assigned', 'invoice_pending'])
-                ->count();
-
-            // IX Points Statistics
-            $totalIxPoints = IxLocation::where('is_active', true)->count();
-            $edgeIxPoints = IxLocation::where('is_active', true)->where('node_type', 'edge')->count();
-            $metroIxPoints = IxLocation::where('is_active', true)->where('node_type', 'metro')->count();
+            $ixProcessorApproved = $ixProcessorPending = 0;
+            $ixLegalApproved = $ixLegalPending = 0;
+            $ixHeadApproved = $ixHeadPending = 0;
+            $ceoApproved = $ceoPending = 0;
+            $nodalOfficerApproved = $nodalOfficerPending = 0;
+            $ixTechTeamApproved = $ixTechTeamPending = 0;
+            $ixAccountApproved = $ixAccountPending = 0;
+            $totalIxPoints = $edgeIxPoints = $metroIxPoints = 0;
 
             // Approved Applications with payment verification
             $approvedApplications = Application::whereIn('status', ['approved', 'payment_verified'])
@@ -292,21 +147,17 @@ class SuperAdminController extends Controller
                 })
                 ->count();
 
-            // Member Statistics (Applications with membership_id)
-            // Total members: All applications with membership_id and application_type = 'IX'
             $totalMembers = Application::whereNotNull('membership_id')
-                ->where('application_type', 'IX')
+                ->where('application_type', 'IRINN')
                 ->count();
 
-            // Live members: Have membership_id AND is_active = true
             $activeMembers = Application::whereNotNull('membership_id')
-                ->where('application_type', 'IX')
+                ->where('application_type', 'IRINN')
                 ->where('is_active', true)
                 ->count();
 
-            // Not live members: Have membership_id but is_active = false
             $disconnectedMembers = Application::whereNotNull('membership_id')
-                ->where('application_type', 'IX')
+                ->where('application_type', 'IRINN')
                 ->where('is_active', false)
                 ->count();
 
@@ -546,81 +397,6 @@ class SuperAdminController extends Controller
     }
 
     /**
-     * Display IX points grid view.
-     */
-    public function ixPoints(Request $request)
-    {
-        try {
-            $nodeType = $request->get('node_type'); // 'edge', 'metro', or null for all
-
-            $query = IxLocation::where('is_active', true);
-
-            if ($nodeType && in_array($nodeType, ['edge', 'metro'])) {
-                $query->where('node_type', $nodeType);
-            }
-
-            $locations = $query->orderBy('node_type')
-                ->orderBy('state')
-                ->orderBy('name')
-                ->get();
-
-            // Get application counts for each location
-            $locationStats = [];
-            foreach ($locations as $location) {
-                // Count applications for this location using JSON path
-                $applications = Application::where('application_type', 'IX')
-                    ->whereRaw('JSON_EXTRACT(application_data, "$.location.id") = ?', [$location->id])
-                    ->get();
-
-                $locationStats[$location->id] = [
-                    'total_applications' => $applications->count(),
-                    'approved_applications' => $applications->whereIn('status', ['approved', 'payment_verified'])->count(),
-                    'pending_applications' => $applications->whereNotIn('status', ['approved', 'rejected', 'ceo_rejected', 'payment_verified'])->count(),
-                    'rejected_applications' => $applications->whereIn('status', ['rejected', 'ceo_rejected'])->count(),
-                ];
-            }
-
-            return view('superadmin.ix-points.index', compact('locations', 'nodeType', 'locationStats'));
-        } catch (Exception $e) {
-            Log::error('Error loading IX points: '.$e->getMessage());
-
-            return redirect()->route('superadmin.dashboard')
-                ->with('error', 'Unable to load IX points right now.');
-        }
-    }
-
-    /**
-     * Display IX point details with applications.
-     */
-    public function showIxPoint($id)
-    {
-        try {
-            $location = IxLocation::findOrFail($id);
-
-            // Get all applications for this location
-            $applications = Application::where('application_type', 'IX')
-                ->whereRaw('JSON_EXTRACT(application_data, "$.location.id") = ?', [$location->id])
-                ->with('user')
-                ->orderBy('created_at', 'desc')
-                ->get();
-
-            // Group applications by status
-            $applicationsByStatus = [
-                'approved' => $applications->whereIn('status', ['approved', 'payment_verified']),
-                'pending' => $applications->whereNotIn('status', ['approved', 'rejected', 'ceo_rejected', 'payment_verified']),
-                'rejected' => $applications->whereIn('status', ['rejected', 'ceo_rejected']),
-            ];
-
-            return view('superadmin.ix-points.show', compact('location', 'applications', 'applicationsByStatus'));
-        } catch (Exception $e) {
-            Log::error('Error loading IX point details: '.$e->getMessage());
-
-            return redirect()->route('superadmin.ix-points')
-                ->with('error', 'Unable to load IX point details.');
-        }
-    }
-
-    /**
      * Display all users.
      */
     public function users(Request $request)
@@ -695,9 +471,8 @@ class SuperAdminController extends Controller
                 },
             ])->findOrFail($id);
 
-            // Get payment transactions for user's IX applications (show all, including inactive for admin view)
             $ixApplications = Application::where('user_id', $id)
-                ->where('application_type', 'IX')
+                ->where('application_type', 'IRINN')
                 ->get();
 
             $paymentTransactions = PaymentTransaction::whereIn('application_id', $ixApplications->pluck('id'))
@@ -1460,7 +1235,7 @@ class SuperAdminController extends Controller
     }
 
     /**
-     * Accept payment for IX application (Super Admin action).
+     * Accept payment for IRINN application (Super Admin action).
      */
     public function acceptPayment($applicationId)
     {
@@ -1469,7 +1244,7 @@ class SuperAdminController extends Controller
             $superAdmin = SuperAdmin::findOrFail($superAdminId);
 
             $application = Application::with('user')
-                ->where('application_type', 'IX')
+                ->where('application_type', 'IRINN')
                 ->findOrFail($applicationId);
 
             // Check if payment is already accepted
@@ -1477,24 +1252,18 @@ class SuperAdminController extends Controller
 
             DB::beginTransaction();
 
-            // Get amount from application_data or use current active pricing
             $amount = 0;
             $applicationData = $application->application_data ?? [];
+            $part5 = $applicationData['part5'] ?? [];
 
-            // Try to get amount from application_data payment info
-            if (isset($applicationData['payment']['total_amount'])) {
+            if (isset($part5['total_amount'])) {
+                $amount = (float) $part5['total_amount'];
+            } elseif (isset($applicationData['payment']['total_amount'])) {
                 $amount = (float) $applicationData['payment']['total_amount'];
             } elseif (isset($applicationData['payment']['amount'])) {
                 $amount = (float) $applicationData['payment']['amount'];
             } else {
-                // Fallback: Get current active pricing from database
-                $applicationPricing = \App\Models\IxApplicationPricing::getActive();
-                if ($applicationPricing) {
-                    $amount = (float) $applicationPricing->total_amount;
-                } else {
-                    // Final fallback: Default amount
-                    $amount = 1000.00;
-                }
+                $amount = 1000.00;
             }
 
             // Generate a unique transaction ID for manual approval
@@ -1521,34 +1290,31 @@ class SuperAdminController extends Controller
                     'payment_mode' => 'manual',
                     'amount' => $amount,
                     'currency' => 'INR',
-                    'product_info' => 'IX Application Fee',
+                    'product_info' => 'IRINN Application Fee',
                     'response_message' => 'Payment accepted by Super Admin',
                 ]);
             }
 
-            // Update application status to submitted (visible to IX processor)
             $oldStatus = $application->status;
             $application->update([
-                'status' => 'submitted',
+                'status' => 'helpdesk',
                 'submitted_at' => $application->submitted_at ?? now('Asia/Kolkata'),
             ]);
 
-            // Log status change
             ApplicationStatusHistory::log(
                 $application->id,
                 $oldStatus,
-                'submitted',
+                'helpdesk',
                 'superadmin',
                 $superAdminId,
-                'Payment accepted by Super Admin - Application submitted for processing'
+                'Payment accepted by Super Admin - IRINN application submitted for helpdesk review'
             );
 
-            // Log super admin action
             AdminAction::logSuperAdmin(
                 $superAdminId,
                 'accepted_payment',
                 $application,
-                "Accepted payment for IX application {$application->application_id}",
+                "Accepted payment for IRINN application {$application->application_id}",
                 [
                     'application_id' => $application->application_id,
                     'user_id' => $application->user_id,
@@ -1557,11 +1323,10 @@ class SuperAdminController extends Controller
                 ]
             );
 
-            // Send message to user
             Message::create([
                 'user_id' => $application->user_id,
                 'subject' => 'Payment Accepted - Application Submitted',
-                'message' => "Your payment for application {$application->application_id} has been accepted by Super Admin. Your application has been submitted and is now under review by IX Processor.",
+                'message' => "Your payment for application {$application->application_id} has been accepted by Super Admin. Your IRINN application is now under review.",
                 'is_read' => false,
                 'sent_by' => 'superadmin',
             ]);
@@ -1569,7 +1334,7 @@ class SuperAdminController extends Controller
             DB::commit();
 
             return redirect()->route('superadmin.users.show', $application->user_id)
-                ->with('success', 'Payment accepted successfully! Application has been submitted for IX Processor review.');
+                ->with('success', 'Payment accepted successfully! Application has been submitted for review.');
         } catch (QueryException $e) {
             DB::rollBack();
             Log::error('Database error accepting payment: '.$e->getMessage());
@@ -1589,7 +1354,7 @@ class SuperAdminController extends Controller
     }
 
     /**
-     * Display list of all IX invoices.
+     * Display list of all IRINN-related invoices.
      */
     public function invoices(Request $request)
     {
@@ -1599,7 +1364,7 @@ class SuperAdminController extends Controller
 
             $query = Invoice::with(['application.user', 'generatedBy'])
                 ->whereHas('application', function ($q) {
-                    $q->where('application_type', 'IX');
+                    $q->where('application_type', 'IRINN');
                 });
 
             // Search functionality
@@ -1652,7 +1417,7 @@ class SuperAdminController extends Controller
 
             $invoice = Invoice::with(['application.user', 'generatedBy'])
                 ->whereHas('application', function ($q) {
-                    $q->where('application_type', 'IX');
+                    $q->where('application_type', 'IRINN');
                 })
                 ->findOrFail($id);
 
@@ -1677,7 +1442,7 @@ class SuperAdminController extends Controller
 
             $invoice = Invoice::with(['application'])
                 ->whereHas('application', function ($q) {
-                    $q->where('application_type', 'IX');
+                    $q->where('application_type', 'IRINN');
                 })
                 ->findOrFail($id);
 
@@ -1733,7 +1498,7 @@ class SuperAdminController extends Controller
             $superAdmin = SuperAdmin::findOrFail($superAdminId);
 
             $query = Application::with(['user'])
-                ->where('application_type', 'IX')
+                ->where('application_type', 'IRINN')
                 ->latest();
 
             // Search functionality
@@ -1791,95 +1556,6 @@ class SuperAdminController extends Controller
     }
 
     /**
-     * Approve application to invoice stage (ip_assigned status) without sending emails.
-     */
-    public function approveToInvoice(Request $request, $id)
-    {
-        try {
-            $superAdminId = session('superadmin_id');
-            $superAdmin = SuperAdmin::findOrFail($superAdminId);
-
-            $application = Application::with('user')->findOrFail($id);
-
-            if ($application->application_type !== 'IX') {
-                return back()->with('error', 'This action is only available for IX applications.');
-            }
-
-            // Check if already at invoice stage or beyond
-            if (in_array($application->status, ['ip_assigned', 'invoice_pending', 'payment_verified', 'approved'])) {
-                return back()->with('info', 'Application is already at or beyond the invoice stage.');
-            }
-
-            // Get application data
-            $applicationData = $application->application_data ?? [];
-            $portSelection = $applicationData['port_selection'] ?? [];
-
-            // Get values from form or use defaults
-            $membershipId = $application->application_id; // Membership ID = Application ID
-            $customerId = $application->user->registrationid ?? null; // Customer ID = Registration ID
-            $portCapacity = $portSelection['capacity'] ?? $application->assigned_port_capacity ?? null;
-            $billingPlan = $portSelection['billing_plan'] ?? $application->billing_cycle ?? 'monthly';
-
-            // Normalize billing cycle
-            if (in_array(strtolower($billingPlan), ['arc', 'annual'])) {
-                $billingCycle = 'annual';
-            } elseif (strtolower($billingPlan) === 'quarterly') {
-                $billingCycle = 'quarterly';
-            } elseif (in_array(strtolower($billingPlan), ['mrc', 'monthly'])) {
-                $billingCycle = 'monthly';
-            } else {
-                $billingCycle = 'monthly';
-            }
-
-            // Update application to ip_assigned status with all details (ready for invoice generation)
-            $oldStatus = $application->status;
-            $application->update([
-                'status' => 'ip_assigned',
-                'membership_id' => $membershipId,
-                'customer_id' => $customerId,
-                'assigned_port_capacity' => $portCapacity,
-                'billing_cycle' => $billingCycle,
-                'service_activation_date' => '2026-01-01', // Fixed date for all
-                'is_active' => true, // Make it live
-                // Leave other details blank for now
-                'assigned_ip' => null,
-                'assigned_port_number' => null,
-            ]);
-
-            // Log status change without sending email
-            ApplicationStatusHistory::log(
-                $application->id,
-                $oldStatus,
-                'ip_assigned',
-                'superadmin',
-                $superAdmin->id,
-                "Application approved to invoice stage by Super Admin. Membership ID: {$membershipId}, Customer ID: {$customerId}, Port Capacity: {$portCapacity}, Billing Cycle: {$billingCycle}, Service Activation: 2026-01-01 (no email sent)"
-            );
-
-            // Log admin action
-            AdminAction::logSuperAdmin(
-                $superAdmin->id,
-                'approved_to_invoice',
-                $application,
-                "Application {$application->application_id} approved to invoice stage (ip_assigned). Membership ID: {$membershipId}, Customer ID: {$customerId}, Port Capacity: {$portCapacity}, Billing Cycle: {$billingCycle}.",
-                [
-                    'membership_id' => $membershipId,
-                    'customer_id' => $customerId,
-                    'assigned_port_capacity' => $portCapacity,
-                    'billing_cycle' => $billingCycle,
-                    'service_activation_date' => '2026-01-01',
-                ]
-            );
-
-            return back()->with('success', 'Application has been approved to invoice stage with all details. IX Account can now generate invoices.');
-        } catch (Exception $e) {
-            Log::error('Error approving application to invoice: '.$e->getMessage());
-
-            return back()->with('error', 'An error occurred while approving the application.');
-        }
-    }
-
-    /**
      * Update invoice status.
      */
     public function updateInvoiceStatus(Request $request, $id)
@@ -1893,7 +1569,7 @@ class SuperAdminController extends Controller
             ]);
 
             $invoice = Invoice::whereHas('application', function ($q) {
-                $q->where('application_type', 'IX');
+                $q->where('application_type', 'IRINN');
             })->findOrFail($id);
 
             $oldStatus = $invoice->status;
@@ -2018,223 +1694,6 @@ class SuperAdminController extends Controller
     }
 
     /**
-     * Display all applications for bulk approval from backend data entry.
-     */
-    public function backendDataEntryApplications(Request $request)
-    {
-        try {
-            $superAdminId = session('superadmin_id');
-            $superAdmin = SuperAdmin::findOrFail($superAdminId);
-
-            // Get all IX applications (not just backend data entry)
-            $query = Application::with(['user'])
-                ->where('application_type', 'IX');
-
-            // Search functionality
-            if ($request->filled('search')) {
-                $search = $request->input('search');
-                $query->where(function ($q) use ($search) {
-                    $q->where('application_id', 'like', "%{$search}%")
-                        ->orWhere('membership_id', 'like', "%{$search}%")
-                        ->orWhereHas('user', function ($userQuery) use ($search) {
-                            $userQuery->where('fullname', 'like', "%{$search}%")
-                                ->orWhere('email', 'like', "%{$search}%");
-                        });
-                });
-            }
-
-            $applications = $query->orderBy('created_at', 'desc')->paginate(20);
-
-            return view('superadmin.applications.backend-data-entry', compact('applications'));
-        } catch (Exception $e) {
-            Log::error('Error loading applications for bulk approval: '.$e->getMessage());
-
-            return redirect()->route('superadmin.dashboard')
-                ->with('error', 'An error occurred while loading applications.');
-        }
-    }
-
-    /**
-     * Bulk approve backend data entry applications from IX Processor to IX Account.
-     */
-    public function bulkApproveBackendApplications(Request $request)
-    {
-        try {
-            $superAdminId = session('superadmin_id');
-            $superAdmin = SuperAdmin::findOrFail($superAdminId);
-
-            $validated = $request->validate([
-                'application_ids' => 'required|array',
-                'application_ids.*' => 'exists:applications,id',
-            ]);
-
-            $applicationIds = $validated['application_ids'];
-            $approvedCount = 0;
-            $errors = [];
-
-            DB::beginTransaction();
-
-            foreach ($applicationIds as $applicationId) {
-                try {
-                    $application = Application::findOrFail($applicationId);
-
-                    // Only process IX applications
-                    if ($application->application_type !== 'IX') {
-                        $errors[] = "Application {$application->application_id} is not an IX application.";
-
-                        continue;
-                    }
-
-                    // Skip if already at or beyond invoice stage
-                    if (in_array($application->status, ['ip_assigned', 'invoice_pending', 'payment_verified', 'approved'])) {
-                        $errors[] = "Application {$application->application_id} is already at or beyond invoice stage.";
-
-                        continue;
-                    }
-
-                    $oldStatus = $application->status;
-
-                    // Get readonly details from application_data
-                    $applicationData = $application->application_data ?? [];
-                    $portSelection = $applicationData['port_selection'] ?? [];
-
-                    // Set values: Membership ID = Application ID, Customer ID = Registration ID
-                    $membershipId = $application->application_id;
-                    $customerId = $application->user->registrationid ?? null;
-                    $portCapacity = $portSelection['capacity'] ?? $application->assigned_port_capacity ?? null;
-                    $billingPlan = $portSelection['billing_plan'] ?? $application->billing_cycle ?? 'monthly';
-
-                    // Normalize billing cycle
-                    if (in_array(strtolower($billingPlan), ['arc', 'annual'])) {
-                        $billingCycle = 'annual';
-                    } elseif (strtolower($billingPlan) === 'quarterly') {
-                        $billingCycle = 'quarterly';
-                    } elseif (in_array(strtolower($billingPlan), ['mrc', 'monthly'])) {
-                        $billingCycle = 'monthly';
-                    } else {
-                        $billingCycle = 'monthly';
-                    }
-
-                    // Update application to ip_assigned status (ready for invoice generation)
-                    // Set service_activation_date to 2026-01-01 for all
-                    $application->update([
-                        'status' => 'ip_assigned',
-                        'membership_id' => $membershipId,
-                        'customer_id' => $customerId,
-                        'assigned_port_capacity' => $portCapacity,
-                        'billing_cycle' => $billingCycle,
-                        'service_activation_date' => '2026-01-01', // Fixed date for all
-                        'is_active' => true, // Make it live
-                        // Leave other details blank for now
-                        'assigned_ip' => null,
-                        'assigned_port_number' => null,
-                    ]);
-
-                    // Log status change
-                    ApplicationStatusHistory::log(
-                        $application->id,
-                        $oldStatus,
-                        'ip_assigned',
-                        'superadmin',
-                        $superAdmin->id,
-                        "Application bulk approved by Super Admin. Status changed from {$oldStatus} to ip_assigned. Membership ID: {$membershipId}, Customer ID: {$customerId}, Port Capacity: {$portCapacity}, Billing Cycle: {$billingCycle}, Service activation date: 2026-01-01."
-                    );
-
-                    // Log admin action
-                    AdminAction::logSuperAdmin(
-                        $superAdmin->id,
-                        'bulk_approved_backend_entry',
-                        $application,
-                        "Application {$application->application_id} bulk approved (IX Processor to IX Account). Membership ID: {$membershipId}, Customer ID: {$customerId}, Port Capacity: {$portCapacity}, Billing Cycle: {$billingCycle}.",
-                        [
-                            'membership_id' => $membershipId,
-                            'customer_id' => $customerId,
-                            'assigned_port_capacity' => $portCapacity,
-                            'billing_cycle' => $billingCycle,
-                            'service_activation_date' => '2026-01-01',
-                        ]
-                    );
-
-                    $approvedCount++;
-                } catch (Exception $e) {
-                    $errors[] = "Error processing application ID {$applicationId}: ".$e->getMessage();
-                    Log::error("Error bulk approving application {$applicationId}: ".$e->getMessage());
-                }
-            }
-
-            DB::commit();
-
-            $message = "Successfully approved {$approvedCount} application(s).";
-            if (! empty($errors)) {
-                $message .= ' Errors: '.implode(', ', $errors);
-            }
-
-            return back()->with('success', $message);
-        } catch (Exception $e) {
-            DB::rollBack();
-            Log::error('Error bulk approving backend data entry applications: '.$e->getMessage());
-
-            return back()->with('error', 'An error occurred while bulk approving applications.');
-        }
-    }
-
-    /**
-     * Disapprove application (revert from ip_assigned back to submitted).
-     */
-    public function disapproveApplication($id)
-    {
-        try {
-            $superAdminId = session('superadmin_id');
-            $superAdmin = SuperAdmin::findOrFail($superAdminId);
-
-            $application = Application::findOrFail($id);
-
-            if ($application->application_type !== 'IX') {
-                return back()->with('error', 'This action is only available for IX applications.');
-            }
-
-            // Only allow disapproving if already at invoice stage or beyond
-            if (! in_array($application->status, ['ip_assigned', 'invoice_pending', 'payment_verified', 'approved'])) {
-                return back()->with('error', 'Application is not in an approved state to disapprove.');
-            }
-
-            $oldStatus = $application->status;
-
-            // Revert application back to submitted status
-            $application->update([
-                'status' => 'submitted',
-                'is_active' => false, // Mark as not live
-                // Keep the details but mark as not active
-            ]);
-
-            // Log status change
-            ApplicationStatusHistory::log(
-                $application->id,
-                $oldStatus,
-                'submitted',
-                'superadmin',
-                $superAdmin->id,
-                "Application disapproved by Super Admin. Status reverted from {$oldStatus} to submitted. Application marked as not live."
-            );
-
-            // Log admin action
-            AdminAction::logSuperAdmin(
-                $superAdmin->id,
-                'disapproved_application',
-                $application,
-                "Application {$application->application_id} disapproved. Status reverted from {$oldStatus} to submitted.",
-                ['previous_status' => $oldStatus]
-            );
-
-            return back()->with('success', 'Application has been disapproved and reverted to submitted status.');
-        } catch (Exception $e) {
-            Log::error('Error disapproving application: '.$e->getMessage());
-
-            return back()->with('error', 'An error occurred while disapproving the application.');
-        }
-    }
-
-    /**
      * Display nodal officer email management page.
      */
     public function nodalOfficerEmails()
@@ -2245,14 +1704,7 @@ class SuperAdminController extends Controller
 
             $nodalOfficerEmails = NodalOfficerEmail::orderBy('order')->orderBy('name')->get();
 
-            // Get unique nodal officer names from IX locations
-            $nodalOfficerNames = IxLocation::whereNotNull('nodal_officer')
-                ->where('nodal_officer', '!=', '')
-                ->distinct()
-                ->orderBy('nodal_officer')
-                ->pluck('nodal_officer')
-                ->unique()
-                ->values();
+            $nodalOfficerNames = collect();
 
             return view('superadmin.nodal-officer-emails.index', compact('superAdmin', 'nodalOfficerEmails', 'nodalOfficerNames'));
         } catch (Exception $e) {

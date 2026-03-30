@@ -1,6 +1,6 @@
 @extends('superadmin.layout')
 
-@section('title', 'IX Invoices Management')
+@section('title', 'IRINN Invoices')
 
 @section('content')
 <div class="container-fluid px-2 py-0">
@@ -8,13 +8,8 @@
         <div class="col-md-12">
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <div>
-                    <h2 class="mb-1 border-0 fw-semibold">IX Invoices Management</h2>
-                    <p class="text-muted mb-0">View and manage all IX application invoices.</p>
-                </div>
-                <div class="d-flex gap-2 flex-wrap">
-                    <a href="{{ route('superadmin.invoices.backfill-paid.index') }}" class="btn btn-primary">
-                        Backfill Paid Invoices
-                    </a>
+                    <h2 class="mb-1 border-0 fw-semibold">IRINN Invoices</h2>
+                    <p class="text-muted mb-0">View and manage IRINN invoices.</p>
                 </div>
             </div>
             <div class="accent-line"></div>

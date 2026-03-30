@@ -55,10 +55,82 @@ class Application extends Model
         'roc_iec_verification_id',
         'submitted_at',
         'approved_at',
+        'irinn_form_version',
+        'irinn_current_stage',
+        'irinn_company_type',
+        'irinn_cin_number',
+        'irinn_udyam_number',
+        'irinn_registration_document_path',
+        'irinn_organisation_name',
+        'irinn_organisation_address',
+        'irinn_organisation_postcode',
+        'irinn_industry_type',
+        'irinn_account_name',
+        'irinn_has_gst_number',
+        'irinn_billing_gstin',
+        'irinn_ca_declaration_path',
+        'irinn_billing_legal_name',
+        'irinn_billing_pan',
+        'irinn_billing_address',
+        'irinn_billing_postcode',
+        'irinn_mr_name',
+        'irinn_mr_designation',
+        'irinn_mr_email',
+        'irinn_mr_mobile',
+        'irinn_mr_din',
+        'irinn_tp_name',
+        'irinn_tp_designation',
+        'irinn_tp_email',
+        'irinn_tp_mobile',
+        'irinn_abuse_name',
+        'irinn_abuse_designation',
+        'irinn_abuse_email',
+        'irinn_abuse_mobile',
+        'irinn_br_name',
+        'irinn_br_designation',
+        'irinn_br_email',
+        'irinn_br_mobile',
+        'irinn_asn_required',
+        'irinn_ipv4_resource_size',
+        'irinn_ipv4_resource_addresses',
+        'irinn_ipv6_resource_size',
+        'irinn_ipv6_resource_addresses',
+        'irinn_resource_fee_amount',
+        'irinn_billing_discount_percent',
+        'irinn_upstream_provider_name',
+        'irinn_upstream_as_number',
+        'irinn_upstream_mobile',
+        'irinn_upstream_email',
+        'irinn_sign_name',
+        'irinn_sign_dob',
+        'irinn_sign_pan',
+        'irinn_sign_email',
+        'irinn_sign_mobile',
+        'irinn_signature_proof_path',
+        'irinn_board_resolution_path',
+        'irinn_kyc_network_diagram_path',
+        'irinn_kyc_equipment_invoice_path',
+        'irinn_kyc_bandwidth_proof_path',
+        'irinn_kyc_irinn_agreement_path',
+        'irinn_other_doc_1_label',
+        'irinn_other_doc_1_path',
+        'irinn_other_doc_2_label',
+        'irinn_other_doc_2_path',
+        'irinn_other_doc_3_label',
+        'irinn_other_doc_3_path',
+        'irinn_other_doc_4_label',
+        'irinn_other_doc_4_path',
+        'irinn_other_doc_5_label',
+        'irinn_other_doc_5_path',
     ];
 
     protected $casts = [
         'application_data' => 'array',
+        'irinn_has_gst_number' => 'boolean',
+        'irinn_asn_required' => 'boolean',
+        'irinn_sign_dob' => 'date',
+        'irinn_resource_fee_amount' => 'decimal:2',
+        'irinn_billing_discount_percent' => 'decimal:2',
         'registration_details' => 'array',
         'kyc_details' => 'array',
         'authorized_representative_details' => 'array',
@@ -375,6 +447,31 @@ class Application extends Model
     }
 
     /**
+     * Whether the IRINN application stores the multi-step form in normalized columns (not legacy JSON parts).
+     */
+    public function hasIrinnNormalizedData(): bool
+    {
+        if ($this->application_type !== 'IRINN') {
+            return false;
+        }
+
+        return filled($this->irinn_organisation_name)
+            || filled($this->irinn_account_name)
+            || filled($this->irinn_ipv4_resource_size)
+            || filled($this->irinn_ipv6_resource_size);
+    }
+
+    /**
+     * Document download keys for stored files on the applications table (irinn_*_path columns).
+     */
+    public static function isIrinnStoredPathDocumentKey(string $key): bool
+    {
+        return str_starts_with($key, 'irinn_')
+            && str_ends_with($key, '_path')
+            && in_array($key, (new self)->getFillable(), true);
+    }
+
+    /**
      * Get status display name.
      */
     public function getStatusDisplayAttribute(): string
@@ -384,10 +481,14 @@ class Application extends Model
             return match ($this->status) {
                 'draft' => 'Draft',
                 'pending' => 'Pending',
+                'submitted' => 'Helpdesk',
                 'helpdesk' => 'Helpdesk',
                 'hostmaster' => 'Hostmaster',
                 'billing' => 'Billing',
-                'resubmission_requested' => 'Resubmission Requested',
+                'billing_approved' => 'Billing approved',
+                'resubmission_requested' => 'Resubmission requested',
+                'approved' => 'Approved',
+                'rejected' => 'Rejected',
                 default => ucfirst((string) ($this->status ?: 'Unknown')),
             };
         }
@@ -436,10 +537,14 @@ class Application extends Model
             return match ($this->status) {
                 'draft' => 'Draft',
                 'pending' => 'Pending',
+                'submitted' => 'Helpdesk',
                 'helpdesk' => 'Helpdesk',
                 'hostmaster' => 'Hostmaster',
                 'billing' => 'Billing',
-                'resubmission_requested' => 'Resubmission Requested',
+                'billing_approved' => 'Billing approved',
+                'resubmission_requested' => 'Resubmission requested',
+                'approved' => 'Approved',
+                'rejected' => 'Rejected',
                 default => ucfirst((string) ($this->status ?: 'Unknown')),
             };
         }

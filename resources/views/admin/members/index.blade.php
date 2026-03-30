@@ -7,13 +7,13 @@
     <div class="row mb-4">
         <div class="col-12">
             <h2 class="mb-1" style="color: #2c3e50; font-weight: 600;">Members</h2>
-            <p class="text-muted mb-0">Members are applications with membership ID and application type IX</p>
+            <p class="text-muted mb-0">IRINN members are applications with a membership ID</p>
             <div class="accent-line"></div>
         </div>
     </div>
 
-    <!-- Payment Summary Dashboard for IX Account Admins -->
-    @if(isset($isIxAccount) && $isIxAccount && $paymentStats)
+    <!-- Payment summary for billing admins -->
+    @if(isset($showBillingPaymentSummary) && $showBillingPaymentSummary && $paymentStats)
     <div class="row g-4 mb-4">
         <div class="col-md-4">
             <a href="{{ route('admin.members', ['filter' => 'active', 'payment_filter' => 'generated']) }}" class="text-decoration-none">
@@ -91,8 +91,8 @@
     </div>
     @endif
 
-    <!-- Current Month Invoice Summary for IX Account Admins -->
-    @if(isset($isIxAccount) && $isIxAccount && isset($currentMonthStats))
+    <!-- Current month invoice summary for billing admins -->
+    @if(isset($showBillingPaymentSummary) && $showBillingPaymentSummary && isset($currentMonthStats))
     <div class="row g-4 mb-4">
         <div class="col-12">
             <div class="card shadow-sm" style="border-radius: 16px; border: 2px solid #6f42c1;">
@@ -302,7 +302,7 @@
     @endif
 
     <!-- GST Verification Selection Modal -->
-    @if(isset($isIxAccount) && $isIxAccount)
+    @if(isset($showBillingPaymentSummary) && $showBillingPaymentSummary)
     <div class="modal fade" id="gstVerificationModal" tabindex="-1" aria-labelledby="gstVerificationModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-lg">
             <div class="modal-content border-c-blue">

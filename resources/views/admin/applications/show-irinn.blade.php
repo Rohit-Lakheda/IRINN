@@ -47,25 +47,26 @@
                             </div>
                         </div>
                         <div class="row mb-3">
-                            @php
-                                $isLive = $application->status === 'billing';
-                            @endphp
                             <div class="col-6">
                                 <div class="label">Submitted At</div>
                                 <div class="value">
-                                    {{ optional($application->created_at)->format('d M Y, h:i A') ?? '—' }}
+                                    {{ optional($application->submitted_at)->format('d M Y, h:i A') ?? '—' }}
                                 </div>
                             </div>
                             <div class="col-6">
-                                <div class="label">Live Status</div>
+                                <div class="label">Workflow status</div>
                                 <div class="value">
-                                    @if($isLive)
+                                    @if($application->status === 'billing_approved')
                                         <span class="badge bg-success-subtle text-success fw-semibold px-3 py-2 rounded-pill">
-                                            LIVE
+                                            BILLING APPROVED
+                                        </span>
+                                    @elseif($application->status === 'billing')
+                                        <span class="badge bg-light text-primary border fw-semibold px-3 py-2 rounded-pill">
+                                            WITH BILLING
                                         </span>
                                     @else
                                         <span class="badge bg-secondary-subtle text-secondary fw-semibold px-3 py-2 rounded-pill">
-                                            NOT LIVE
+                                            IN PROGRESS
                                         </span>
                                     @endif
                                 </div>
@@ -100,26 +101,50 @@
 
                         <div class="row mb-3">
                             <div class="col-md-4 mb-3 mb-md-0">
-                                <div class="label">IPv4 Prefix</div>
+                                <div class="label">IPv4 resource</div>
                                 <div class="value">
-                                    {{ $part2['ipv4_prefix'] ?? $data['ipv4_prefix'] ?? '—' }}
+                                    @if($application->hasIrinnNormalizedData())
+                                        {{ $application->irinn_ipv4_resource_size ?? '—' }}
+                                        @if($application->irinn_ipv4_resource_addresses)
+                                            <span class="text-muted small">({{ $application->irinn_ipv4_resource_addresses }} addresses)</span>
+                                        @endif
+                                    @else
+                                        {{ $part2['ipv4_prefix'] ?? $data['ipv4_prefix'] ?? '—' }}
+                                    @endif
                                 </div>
                             </div>
                             <div class="col-md-4 mb-3 mb-md-0">
-                                <div class="label">IPv6 Prefix</div>
+                                <div class="label">IPv6 resource</div>
                                 <div class="value">
-                                    {{ $part2['ipv6_prefix'] ?? $data['ipv6_prefix'] ?? '—' }}
+                                    @if($application->hasIrinnNormalizedData())
+                                        {{ $application->irinn_ipv6_resource_size ?? '—' }}
+                                        @if($application->irinn_ipv6_resource_addresses)
+                                            <span class="text-muted small">({{ $application->irinn_ipv6_resource_addresses }} addresses)</span>
+                                        @endif
+                                    @else
+                                        {{ $part2['ipv6_prefix'] ?? $data['ipv6_prefix'] ?? '—' }}
+                                    @endif
                                 </div>
                             </div>
                             <div class="col-md-4">
                                 <div class="label">ASN Required</div>
                                 <div class="value">
-                                    @php
-                                        $asnRequired = $part2['asn_required'] ?? $data['asn_required'] ?? null;
-                                    @endphp
-                                    {{ $asnRequired === 'yes' || $asnRequired === '1' ? 'Yes' : ($asnRequired === 'no' || $asnRequired === '0' ? 'No' : '—') }}
+                                    @if($application->hasIrinnNormalizedData())
+                                        {{ $application->irinn_asn_required ? 'Yes' : 'No' }}
+                                    @else
+                                        @php
+                                            $asnRequired = $part2['asn_required'] ?? $data['asn_required'] ?? null;
+                                        @endphp
+                                        {{ $asnRequired === 'yes' || $asnRequired === '1' ? 'Yes' : ($asnRequired === 'no' || $asnRequired === '0' ? 'No' : '—') }}
+                                    @endif
                                 </div>
                             </div>
+                            @if($application->hasIrinnNormalizedData() && $application->irinn_resource_fee_amount !== null)
+                            <div class="col-md-12 mt-2">
+                                <div class="label">Calculated resource fee</div>
+                                <div class="value">₹{{ number_format((float) $application->irinn_resource_fee_amount, 2) }}</div>
+                            </div>
+                            @endif
                         </div>
 
                         {{-- (Fee and PAN moved to detailed sections; keep top card focused on stage and IP info) --}}
@@ -132,9 +157,23 @@
                 @php
                     $data = $application->application_data ?? [];
                     $irinnStatus = $application->status ?? 'helpdesk';
+                    $atHelpdesk = in_array($irinnStatus, ['helpdesk', 'submitted'], true);
                     $irinnPreviousStage = $data['irinn_previous_stage'] ?? null;
                     $currentStageLabel = $application->current_stage ?? $application->status_display;
                     $selectedRoleLabel = ucfirst($selectedRole ?? (session('admin_selected_role') ?? 'Helpdesk'));
+                    $wfRole = session('admin_selected_role');
+                    $helpdeskResubmitStatuses = ['submitted', 'helpdesk', 'pending'];
+                    $canHelpdeskResubmit = $wfRole === 'helpdesk'
+                        && in_array($irinnStatus, $helpdeskResubmitStatuses, true);
+                    $canHostmasterResubmit = $wfRole === 'hostmaster'
+                        && $irinnStatus === 'hostmaster';
+                    $canResubmit = $canHelpdeskResubmit || $canHostmasterResubmit;
+                    $hasWorkflowContent =
+                        ($wfRole === 'helpdesk' && $atHelpdesk)
+                        || ($wfRole === 'hostmaster' && $irinnStatus === 'hostmaster')
+                        || ($wfRole === 'billing' && in_array($irinnStatus, ['billing', 'billing_approved'], true))
+                        || ($wfRole === 'hostmaster' && $irinnStatus === 'billing_approved')
+                        || $canResubmit;
                 @endphp
                 <div class="card irinn-app-card h-100">
                     <div class="card-header irinn-card-header d-flex justify-content-between align-items-center">
@@ -149,14 +188,14 @@
                         </span>
                     </div>
                     <div class="card-body">
-                        @if(session('admin_selected_role') === 'helpdesk' && $irinnStatus === 'helpdesk')
+                        @if(session('admin_selected_role') === 'helpdesk' && $atHelpdesk)
                             <div class="mb-3">
                                 <form method="POST" action="{{ route('admin.applications.irinn.change-stage', $application->id) }}" class="d-inline">
                                     @csrf
                                     <input type="hidden" name="target_stage" value="hostmaster">
                                     <button type="submit" class="btn btn-sm btn-success irin-btn-rounded"
-                                            onclick="return confirm('Move application to Hostmaster stage?');">
-                                        Move to Hostmaster
+                                            onclick="return confirm('Forward this application to Hostmaster?');">
+                                        Approve — forward to Hostmaster
                                     </button>
                                 </form>
                             </div>
@@ -166,20 +205,31 @@
                                     @csrf
                                     <input type="hidden" name="target_stage" value="billing">
                                     <button type="submit" class="btn btn-sm btn-success irin-btn-rounded"
-                                            onclick="return confirm('Move application to Billing stage?');">
-                                        Move to Billing
+                                            onclick="return confirm('Forward this application to Billing?');">
+                                        Approve — forward to Billing
+                                    </button>
+                                </form>
+                            </div>
+                        @elseif(session('admin_selected_role') === 'billing' && $irinnStatus === 'billing')
+                            <div class="mb-3">
+                                <form method="POST" action="{{ route('admin.applications.irinn.change-stage', $application->id) }}" class="d-inline">
+                                    @csrf
+                                    <input type="hidden" name="target_stage" value="billing_approved">
+                                    <button type="submit" class="btn btn-sm btn-success irin-btn-rounded"
+                                            onclick="return confirm('Mark this application as approved by Billing?');">
+                                        Approve (Billing complete)
                                     </button>
                                 </form>
                             </div>
                         @endif
 
-                        @if(in_array(session('admin_selected_role'), ['helpdesk', 'hostmaster'], true) && $irinnStatus !== 'billing')
+                        @if($canResubmit)
                             <div class="irinn-divider my-3"></div>
                             <form method="POST" action="{{ route('admin.applications.irinn.request-resubmission', $application->id) }}">
                                 @csrf
                                 <div class="mb-2">
                                     <label class="form-label fw-semibold">
-                                        Request Resubmission <span class="text-muted">(message to user)</span>
+                                        Request resubmission <span class="text-muted">(message to user)</span>
                                     </label>
                                     <textarea name="resubmission_reason"
                                               rows="3"
@@ -191,8 +241,8 @@
                                 </div>
                                 <button type="submit"
                                         class="btn btn-sm btn-outline-danger irin-btn-rounded"
-                                        onclick="return confirm('Ask user to resubmit this IRINN application?');">
-                                    Request Resubmission
+                                        onclick="return confirm('Ask the user to resubmit this IRINN application?');">
+                                    Request resubmission
                                 </button>
                                 @if($irinnPreviousStage)
                                     <small class="text-muted ms-2">
@@ -200,9 +250,148 @@
                                     </small>
                                 @endif
                             </form>
-                        @else
-                            <p class="text-muted mb-0" style="font-size: 0.85rem;">
-                                No workflow actions available in the current stage/view.
+                        @endif
+
+                        @if(session('admin_selected_role') === 'billing' && $irinnStatus === 'billing_approved')
+                            <div class="alert alert-success small mb-3">
+                                Billing approval is complete. Generate the annual resource invoice below; users pay after logging in to the portal.
+                            </div>
+                            <a href="{{ route('admin.invoices.index') }}" class="btn btn-sm btn-outline-primary irin-btn-rounded mb-2">Open all invoices</a>
+                        @endif
+
+                        @if(session('admin_selected_role') === 'billing' && in_array($irinnStatus, ['billing', 'billing_approved'], true))
+                            <div class="irinn-divider my-3"></div>
+                            <h6 class="fw-semibold mb-2">Annual IRINN billing</h6>
+                            <p class="small text-muted mb-2">Discount % applies to <strong>every</strong> annual invoice for this application. Due date is one month after the invoice date. E-invoice (IRN/ACK) is requested only when the applicant provided a billing GSTIN.</p>
+
+                            <form method="POST" action="{{ route('admin.applications.irinn.billing-discount', $application->id) }}" class="mb-3">
+                                @csrf
+                                <label class="form-label small fw-semibold">Billing discount (%)</label>
+                                <div class="input-group input-group-sm" style="max-width: 220px;">
+                                    <input type="number" step="0.01" min="0" max="100" name="irinn_billing_discount_percent" class="form-control"
+                                           value="{{ old('irinn_billing_discount_percent', $application->irinn_billing_discount_percent ?? 0) }}" required>
+                                    <button type="submit" class="btn btn-outline-secondary">Save</button>
+                                </div>
+                                @error('irinn_billing_discount_percent')<small class="text-danger">{{ $message }}</small>@enderror
+                            </form>
+
+                            <div class="mb-2 d-flex flex-wrap align-items-end gap-2">
+                                <div>
+                                    <label class="form-label small fw-semibold mb-0">Annual base amount (before discount, ₹)</label>
+                                    <input type="number" form="irinn-generate-annual-form" step="0.01" min="0.01" name="annual_base_amount" id="irinn-annual-base-input" class="form-control form-control-sm" style="max-width: 200px;"
+                                           value="{{ old('annual_base_amount', $application->irinn_resource_fee_amount) }}" required>
+                                </div>
+                                @if($irinnStatus === 'billing_approved')
+                                    <a href="#" class="btn btn-sm btn-outline-secondary irin-btn-rounded" id="irinn-preview-annual-link">Preview invoice</a>
+                                    <form id="irinn-generate-annual-form" method="POST" action="{{ route('admin.applications.irinn.generate-annual-invoice', $application->id) }}" class="d-inline">
+                                        @csrf
+                                        <button type="submit" class="btn btn-sm btn-primary irin-btn-rounded" onclick="return confirm('Generate annual invoice for the current financial year? The user will be emailed when possible.');">Generate annual invoice</button>
+                                    </form>
+                                @else
+                                    <p class="small text-muted mb-0">Generation unlocks after <strong>billing approval</strong>. You can still set the discount above.</p>
+                                @endif
+                            </div>
+                            @error('annual_base_amount')<small class="text-danger d-block">{{ $message }}</small>@enderror
+
+                            <div class="d-flex flex-wrap gap-2 mt-2 mb-2">
+                                <a href="{{ route('admin.invoices.index', ['application_record_id' => $application->id]) }}" class="btn btn-sm btn-outline-primary irin-btn-rounded">View all invoices for this application</a>
+                            </div>
+
+                            @if(isset($irinnAnnualInvoices) && $irinnAnnualInvoices->isNotEmpty())
+                                <div class="small mt-3">
+                                    <span class="fw-semibold">Recent annual invoices</span>
+                                    <div class="table-responsive mt-2">
+                                        <table class="table table-sm table-bordered align-middle mb-0">
+                                            <thead class="table-light">
+                                            <tr>
+                                                <th>Invoice</th>
+                                                <th class="text-end">Total</th>
+                                                <th>Payment</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                            </thead>
+                                            <tbody>
+                                            @foreach($irinnAnnualInvoices as $inv)
+                                                <tr>
+                                                    <td class="text-break">{{ $inv->invoice_number }}<br><span class="text-muted">FY {{ $inv->billing_period }}</span></td>
+                                                    <td class="text-end">₹{{ number_format((float) $inv->total_amount, 2) }}</td>
+                                                    <td><span class="badge bg-secondary text-uppercase">{{ $inv->payment_status }}</span></td>
+                                                    <td>
+                                                        @if($inv->pdf_path)
+                                                            <a href="{{ route('admin.applications.invoice.download', $inv->id) }}" class="btn btn-link btn-sm p-0 me-2">PDF</a>
+                                                        @endif
+                                                        @if($inv->tds_certificate_path)
+                                                            <a href="{{ route('admin.applications.invoice.tds-certificate', $inv->id) }}" class="btn btn-link btn-sm p-0 me-2">TDS cert.</a>
+                                                        @endif
+                                                        @if($inv->billing_payment_proof_path)
+                                                            <a href="{{ route('admin.applications.invoice.billing-payment-proof', $inv->id) }}" class="btn btn-link btn-sm p-0 me-2">Payment proof</a>
+                                                        @endif
+                                                    </td>
+                                                </tr>
+                                                @if($inv->payment_status !== 'paid' || (float)($inv->balance_amount ?? 0) > 0.009)
+                                                    <tr class="border-top-0">
+                                                        <td colspan="4" class="pt-0 pb-3">
+                                                            <form method="POST" action="{{ route('admin.applications.irinn.invoice.mark-paid', [$application->id, $inv->id]) }}" enctype="multipart/form-data" class="row g-2 align-items-end small">
+                                                                @csrf
+                                                                <div class="col-md-3">
+                                                                    <label class="form-label mb-0">Payment / txn reference</label>
+                                                                    <input type="text" name="manual_payment_id" class="form-control form-control-sm" required value="{{ old('manual_payment_id') }}">
+                                                                </div>
+                                                                <div class="col-md-4">
+                                                                    <label class="form-label mb-0">Comment</label>
+                                                                    <input type="text" name="manual_payment_notes" class="form-control form-control-sm" value="{{ old('manual_payment_notes') }}">
+                                                                </div>
+                                                                <div class="col-md-3">
+                                                                    <label class="form-label mb-0">Payment document (optional)</label>
+                                                                    <input type="file" name="billing_payment_proof" class="form-control form-control-sm" accept=".pdf,.jpg,.jpeg,.png">
+                                                                </div>
+                                                                <div class="col-md-2">
+                                                                    <button type="submit" class="btn btn-sm btn-success w-100">Mark paid</button>
+                                                                </div>
+                                                            </form>
+                                                        </td>
+                                                    </tr>
+                                                @endif
+                                            @endforeach
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            @endif
+                            @push('scripts')
+                                <script>
+                                    (function () {
+                                        var base = document.getElementById('irinn-annual-base-input');
+                                        var link = document.getElementById('irinn-preview-annual-link');
+                                        if (!base || !link) return;
+                                        var previewUrl = @json(route('admin.applications.irinn.preview-annual-invoice', $application->id));
+                                        link.addEventListener('click', function (e) {
+                                            e.preventDefault();
+                                            var v = base.value;
+                                            if (!v || parseFloat(v) <= 0) {
+                                                alert('Enter a valid annual base amount first.');
+                                                return;
+                                            }
+                                            window.open(previewUrl + '?annual_base_amount=' + encodeURIComponent(v), '_blank', 'noopener');
+                                        });
+                                    })();
+                                </script>
+                            @endpush
+                        @endif
+
+                        @if(session('admin_selected_role') === 'hostmaster' && $irinnStatus === 'billing_approved')
+                            <div class="alert alert-info small mb-0 mt-3">
+                                Resource allocation for this application will be added in a follow-up step.
+                            </div>
+                        @endif
+
+                        @if(! $hasWorkflowContent)
+                            <p class="text-muted mb-0 small">
+                                @if(! $wfRole)
+                                    Choose Helpdesk, Hostmaster, or Billing in the role switcher to see actions for this application.
+                                @else
+                                    No workflow actions for your role at this stage.
+                                @endif
                             </p>
                         @endif
                     </div>
@@ -210,9 +399,9 @@
             </div>
         </div>
 
-        {{-- Second row: Registration & KYC --}}
+        {{-- Registration summary (KYC summary card removed; full applicant view is on Comprehensive Details) --}}
         <div class="row g-4 mt-1 mt-md-4">
-            <div class="col-md-6">
+            <div class="col-12 col-lg-8">
                 <div class="card irinn-app-card h-100">
                     <div class="card-header irinn-card-header">
                         <h5 class="mb-0">Registration Details</h5>
@@ -242,83 +431,11 @@
                                 <div class="value">{{ $regDetails['mobile'] ?? $registration->mobile ?? '—' }}</div>
                             </div>
                         </div>
-                        {{-- Registered address omitted here to keep card concise; full address available in KYC/Billing. --}}
+                        {{-- Registered address omitted here to keep card concise; see View Comprehensive Details for the full applicant view. --}}
                     </div>
                 </div>
             </div>
 
-            @php
-                $kycDetails = $application->kyc_details ?? [];
-            @endphp
-
-            <div class="col-md-6">
-                <div class="card irinn-app-card h-100">
-                    <div class="card-header irinn-card-header">
-                        <h5 class="mb-0">KYC Details</h5>
-                    </div>
-                    <div class="card-body">
-                        @php
-                            $gst = $application->gstVerification ?? null;
-                            $part1 = $data['part1'] ?? [];
-                            $billingAddress = $kycDetails['billing_address'] ?? null;
-                            if (is_string($billingAddress)) {
-                                $decoded = json_decode($billingAddress, true);
-                                if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
-                                    $billingAddress = $decoded;
-                                }
-                            }
-                        @endphp
-                        <div class="row mb-3">
-                            <div class="col-6">
-                                <div class="label">GSTIN</div>
-                                <div class="value">
-                                    {{ $gst->gstin ?? ($kycDetails['gstin'] ?? '—') }}
-                                </div>
-                            </div>
-                            <div class="col-6">
-                                <div class="label">Affiliate Type</div>
-                                <div class="value">
-                                    {{ $kycDetails['affiliate_type'] ?? $part1['affiliate_type'] ?? '—' }}
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="row mb-3">
-                            <div class="col-12">
-                                <div class="label">Legal / Trade Name</div>
-                                <div class="value">
-                                    {{ $gst->legal_name ?? $kycDetails['legal_name'] ?? $kycDetails['trade_name'] ?? '—' }}
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="row mb-3">
-                            <div class="col-12">
-                                <div class="label">Billing Address</div>
-                                <div class="value">
-                                    @if(is_array($billingAddress))
-                                        @php
-                                            $parts = [];
-                                            foreach (['address','street','city','state','pincode','country'] as $field) {
-                                                if (!empty($billingAddress[$field])) {
-                                                    $parts[] = $billingAddress[$field];
-                                                }
-                                            }
-                                        @endphp
-                                        {{ !empty($parts) ? implode(', ', $parts) : '—' }}
-                                    @elseif(!empty($billingAddress))
-                                        {{ $billingAddress }}
-                                    @else
-                                        —
-                                    @endif
-                                </div>
-                            </div>
-                        </div>
-
-                        {{-- (Standard view keeps KYC summary brief; full KYC breakdown is available in comprehensive view) --}}
-                    </div>
-                </div>
-            </div>
         </div>
 
         {{-- Third row: Status history --}}

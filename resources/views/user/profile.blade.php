@@ -13,6 +13,18 @@
                     <h5 class="mb-0">Profile Details</h5>
                 </div>
                 <div class="card-body p-4">
+                    @if(session('success'))
+                        <div class="alert alert-success alert-dismissible fade show" role="alert">
+                            {{ session('success') }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>
+                    @endif
+                    @if(session('error'))
+                        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                            {{ session('error') }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>
+                    @endif
                     <div class="row">
                         <div class="col-md-6">
                             <table class="table table-borderless">
@@ -84,11 +96,66 @@
                                 </tr>
                             </table>
                         </div>
-                        {{-- GST Verification Details --}}
-                        <div class="col-md-6">
+                    </div>
+
+                    @if(isset($irinnApplication) && $irinnApplication)
+                        <div class="row mt-4">
+                            <div class="col-12">
+                                <h6 class="fw-semibold mb-3" style="color: #2c3e50;">GST &amp; billing (from IRINN application)</h6>
+                                <p class="small text-muted mb-2">These details are stored on your application record and are used for invoicing and compliance.</p>
+                                <table class="table table-bordered table-sm bg-white">
+                                    <tbody>
+                                    <tr>
+                                        <th class="text-muted" style="width: 28%;">Application ID</th>
+                                        <td><strong>{{ $irinnApplication->application_id }}</strong></td>
+                                    </tr>
+                                    <tr>
+                                        <th class="text-muted">GST registered for billing</th>
+                                        <td>{{ $irinnApplication->irinn_has_gst_number ? 'Yes' : 'No' }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th class="text-muted">Billing GSTIN</th>
+                                        <td>{{ $irinnApplication->irinn_billing_gstin ? strtoupper($irinnApplication->irinn_billing_gstin) : '—' }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th class="text-muted">Billing legal name</th>
+                                        <td>{{ $irinnApplication->irinn_billing_legal_name ?: '—' }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th class="text-muted">Billing PAN</th>
+                                        <td>{{ $irinnApplication->irinn_billing_pan ? strtoupper($irinnApplication->irinn_billing_pan) : '—' }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th class="text-muted">Billing address</th>
+                                        <td>{{ trim(implode(', ', array_filter([(string) ($irinnApplication->irinn_billing_address ?? ''), (string) ($irinnApplication->irinn_billing_postcode ?? '')]))) ?: '—' }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th class="text-muted">Member representative</th>
+                                        <td>
+                                            {{ $irinnApplication->irinn_mr_name ?: '—' }}
+                                            @if($irinnApplication->irinn_mr_email || $irinnApplication->irinn_mr_mobile)
+                                                <br><span class="small text-muted">{{ $irinnApplication->irinn_mr_email }} @if($irinnApplication->irinn_mr_mobile) · {{ $irinnApplication->irinn_mr_mobile }} @endif</span>
+                                            @endif
+                                        </td>
+                                    </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    @else
+                        <div class="row mt-4">
+                            <div class="col-12">
+                                <p class="text-muted small mb-0">No IRINN application found on your account yet. GST and billing details will appear here after you submit an application.</p>
+                            </div>
+                        </div>
+                    @endif
+
+                    <div class="row mt-4">
+                        <div class="col-12">
+                            <h6 class="fw-semibold mb-3" style="color: #2c3e50;">Portal GST verification (KYC)</h6>
                             <table class="table table-borderless">
                                 <tr>
-                                    <th width="40%" style="color: #2c3e50; font-weight: 600;">GSTIN:</th>
+                                    <th width="28%" style="color: #2c3e50; font-weight: 600;">GSTIN</th>
                                     <td>
                                         <span>{{ $gstin ?? 'N/A' }}</span>
                                         @if($gstVerified ?? false)
@@ -97,36 +164,37 @@
                                     </td>
                                 </tr>
                                 <tr>
-                                    <th style="color: #2c3e50; font-weight: 600;">Business Name</th>
+                                    <th style="color: #2c3e50; font-weight: 600;">Business name</th>
                                     <td>{{ $gstVerification?->legal_name ?? 'N/A' }}</td>
                                 </tr>
                                 <tr>
-                                    <th style="color: #2c3e50; font-weight: 600;">Entity Type</th>
+                                    <th style="color: #2c3e50; font-weight: 600;">Entity type</th>
                                     <td>{{ $gstVerification?->constitution_of_business ?? 'N/A' }}</td>
                                 </tr>
-                                <!-- <tr>
-                                    <th style="color: #2c3e50; font-weight: 600;">Company Status</th>
-                                    <td>{{ $gstVerification?->company_status ?? 'N/A' }}</td>
-                                </tr> -->
                                 <tr>
-                                    <th style="color: #2c3e50; font-weight: 600;">Registration Date</th>
+                                    <th style="color: #2c3e50; font-weight: 600;">Registration date</th>
                                     <td>{{ $gstVerification?->registration_date ? date('d M Y', strtotime($gstVerification?->registration_date)) : 'N/A' }}</td>
                                 </tr>
                                 <tr>
-                                    <th style="color: #2c3e50; font-weight: 600;">GST Type</th>
+                                    <th style="color: #2c3e50; font-weight: 600;">GST type</th>
                                     <td>{{ $gstVerification?->gst_type ?? 'N/A' }}</td>
                                 </tr>
                                 <tr>
-                                    <th style="color: #2c3e50; font-weight: 600;">Primary Address</th>
+                                    <th style="color: #2c3e50; font-weight: 600;">Primary address</th>
                                     <td>{{ $gstVerification?->primary_address ?? 'N/A' }}</td>
                                 </tr>
-                              
-                                
                             </table>
                         </div>
                     </div>
                     
                     <div class="mt-4 pt-3 border-top border-c-yellow">
+                        <p class="text-muted small mb-3">
+                            <strong>Contact updates:</strong> Only your <strong>registered email</strong> and <strong>registered mobile number</strong> can be changed directly in the portal.
+                            Use <strong>Request profile update</strong> below if you need admin approval for other changes (for example corrections that are not limited to email or mobile).
+                        </p>
+                        <a href="{{ route('user.profile.edit') }}" class="btn btn-outline-primary mb-3 me-2">
+                            Update email &amp; mobile
+                        </a>
                         @if($pendingRequest)
                             <div class="alert alert-info border-0 shadow-sm" style="border-radius: 12px;">
                                 <div class="d-flex align-items-start">

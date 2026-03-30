@@ -17,7 +17,7 @@ class UserReactivationRequestController extends Controller
             $application = Application::query()
                 ->where('id', $applicationId)
                 ->where('user_id', $userId)
-                ->where('application_type', 'IX')
+                ->where('application_type', 'IRINN')
                 ->firstOrFail();
 
             if (($application->service_status ?? 'live') !== 'disconnected') {

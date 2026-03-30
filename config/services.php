@@ -53,6 +53,39 @@ return [
     //     'service_provider' => env('PAYU_SERVICE_PROVIDER', 'payu_paisa'),
     //     'webhook_url' => env('PAYU_WEBHOOK_URL', null), // Will be auto-generated if not set
     // ],
+    'mytoday' => [
+        'enabled' => env('MYTODAY_SMS_ENABLED', false),
+        'url' => env('MYTODAY_SMS_URL', 'https://bulkpush.mytoday.com/BulkSms/SingleMsgApi'),
+        'feedid' => env('MYTODAY_SMS_FEEDID'),
+        'username' => env('MYTODAY_SMS_USERNAME'),
+        'password' => env('MYTODAY_SMS_PASSWORD'),
+        'templateid' => env('MYTODAY_SMS_TEMPLATE_ID'),
+        'senderid' => env('MYTODAY_SMS_SENDER_ID', 'IRINNH'),
+        'country_prefix' => env('MYTODAY_SMS_COUNTRY_PREFIX', '91'),
+        'timeout' => env('MYTODAY_SMS_TIMEOUT', 30),
+        'text' => env(
+            'MYTODAY_SMS_TEXT',
+            'Dear User, Your OTP for IRINN Membership Application mobile verification is :otp This OTP is valid for 10 minutes IRINN/NIXI'
+        ),
+        'text_registration' => env('MYTODAY_SMS_TEXT_REGISTRATION'),
+        'text_profile_update' => env('MYTODAY_SMS_TEXT_PROFILE_UPDATE'),
+        'text_irinn_application' => env('MYTODAY_SMS_TEXT_IRINN_APPLICATION'),
+        'text_ix_application' => env('MYTODAY_SMS_TEXT_IX_APPLICATION'),
+    ],
+
+    /*
+    | Webtel / NIC e-invoice (GenIRN). Override all values in .env in production.
+    | Per-location overrides: EINVOICE_DELHI_USERNAME, EINVOICE_BANGALORE_CD_KEY, etc.
+    */
+    'einvoice' => [
+        'url' => env('EINVOICE_API_URL'),
+        'cd_key' => env('EINVOICE_CD_KEY', '1000687'),
+        'ef_username' => env('EINVOICE_EF_USERNAME', '29AAACW3775F000'),
+        'ef_password' => env('EINVOICE_EF_PASSWORD', 'Admin!23..'),
+        'password' => env('EINVOICE_PASSWORD', 'Admin!23'),
+        'username' => env('EINVOICE_USERNAME'),
+    ],
+
     'payu' => [
         'merchant_id' => env('PAYU_MERCHANT_ID', '8092319'),
         'merchant_key' => env('PAYU_MERCHANT_KEY', '5BEKf4'),

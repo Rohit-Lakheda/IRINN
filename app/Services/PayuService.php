@@ -130,12 +130,40 @@ class PayuService
     }
 
     /**
+     * Verify a PayU browser return payload (hash + success status).
+     *
+     * @return array{success: bool, message: string}
+     */
+    public function verifyPayment(array $response): array
+    {
+        if (empty(trim((string) ($response['hash'] ?? '')))) {
+            return ['success' => false, 'message' => 'Missing payment verification data.'];
+        }
+
+        if (! $this->verifyHash($response)) {
+            return ['success' => false, 'message' => 'Payment verification failed.'];
+        }
+
+        $status = strtolower(trim((string) ($response['status'] ?? '')));
+        if ($status !== 'success') {
+            $detail = trim((string) ($response['error'] ?? $response['error_Message'] ?? $response['error_message'] ?? ''));
+
+            return [
+                'success' => false,
+                'message' => $detail !== '' ? $detail : 'Payment was not successful.',
+            ];
+        }
+
+        return ['success' => true, 'message' => 'OK'];
+    }
+
+    /**
      * Prepare payment data for PayU.
-     * 
+     *
      * Mandatory parameters: key, txnid, amount, productinfo, firstname, email, phone, surl, furl, hash
-     * Optional parameters: lastname, address1, address2, city, state, country, zipcode, 
+     * Optional parameters: lastname, address1, address2, city, state, country, zipcode,
      *                     enforced_payment, drop_category, custom_note, note_category
-     * 
+     *
      * Reference: PayU Hosted Checkout API Documentation - Step 1.1
      */
     public function preparePaymentData(array $data): array
@@ -143,7 +171,7 @@ class PayuService
         // Validate mandatory fields
         $requiredFields = ['transaction_id', 'amount', 'product_info', 'firstname', 'email', 'phone', 'success_url', 'failure_url'];
         $missingFields = array_diff($requiredFields, array_keys($data));
-        
+
         if (! empty($missingFields)) {
             throw new \InvalidArgumentException('Missing required PayU parameters: '.implode(', ', $missingFields));
         }
@@ -237,24 +265,24 @@ class PayuService
     {
         $mode = config('services.payu.mode', 'test');
         $command = 'verify_payment';
-        
+
         // Build hash for status check
         $hashString = $this->merchantKey.'|'.$command.'|'.$transactionId.'|'.$this->salt;
         $hash = strtolower(hash('sha512', $hashString));
-        
+
         // PayU status check endpoint (Verify Payment API)
         // Reference: PayU Hosted Checkout API Documentation - Step 1.6
-        $statusUrl = $mode === 'test' 
+        $statusUrl = $mode === 'test'
             ? 'https://test.payu.in/merchant/postservice.php?form=2'
             : 'https://info.payu.in/merchant/postservice.php?form=2';
-        
+
         $postData = [
             'key' => $this->merchantKey,
             'command' => $command,
             'var1' => $transactionId,
             'hash' => $hash,
         ];
-        
+
         try {
             $ch = curl_init();
             curl_setopt($ch, CURLOPT_URL, $statusUrl);
@@ -263,30 +291,31 @@ class PayuService
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
             curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
             curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-            
+
             $response = curl_exec($ch);
             $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
             $error = curl_error($ch);
             curl_close($ch);
-            
+
             if ($error) {
                 \Illuminate\Support\Facades\Log::error('PayU Status Check cURL Error', [
                     'error' => $error,
                     'transaction_id' => $transactionId,
                 ]);
+
                 return null;
             }
-            
+
             // Parse response according to PayU documentation
             // PayU Verify Payment API returns JSON format
             // Reference: PayU Hosted Checkout API Documentation - Step 1.6
             $result = [];
             $json = json_decode($response, true);
-            
+
             if ($json && isset($json['status'])) {
                 // Valid JSON response from PayU
                 $result = $json;
-                
+
                 // Extract transaction details if available
                 if (isset($json['transaction_details']) && is_array($json['transaction_details'])) {
                     // PayU returns transaction_details as an object with transaction ID as key
@@ -332,19 +361,20 @@ class PayuService
                     ];
                 }
             }
-            
+
             \Illuminate\Support\Facades\Log::info('PayU Status Check Response', [
                 'transaction_id' => $transactionId,
                 'http_code' => $httpCode,
                 'response' => $result,
             ]);
-            
+
             return $result;
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::error('PayU Status Check Exception', [
                 'error' => $e->getMessage(),
                 'transaction_id' => $transactionId,
             ]);
+
             return null;
         }
     }

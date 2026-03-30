@@ -7,6 +7,7 @@ use App\Mail\RegistrationSuccessMail;
 use App\Models\MasterOtp;
 use App\Models\Registration;
 use App\Services\IdfyPanService;
+use App\Services\MyTodayBulkSmsService;
 use Exception;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
@@ -20,6 +21,10 @@ use PDOException;
 
 class RegisterController extends Controller
 {
+    public function __construct(
+        private readonly MyTodayBulkSmsService $myTodayBulkSms,
+    ) {}
+
     /**
      * Display the registration page.
      */
@@ -341,25 +346,30 @@ class RegisterController extends Controller
             }
 
             // Generate OTP
-            $otp = str_pad(rand(0, 999999), 6, '0', STR_PAD_LEFT);
+            $otp = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
 
             // Store OTP in session
-            session(['mobile_otp_'.md5($mobile) => $otp]);
-            session(['mobile_otp_time_'.md5($mobile) => now('Asia/Kolkata')]);
+            $otpKey = 'mobile_otp_'.md5($mobile);
+            $otpTimeKey = 'mobile_otp_time_'.md5($mobile);
+            session([$otpKey => $otp]);
+            session([$otpTimeKey => now('Asia/Kolkata')]);
 
-            // Send OTP via SMS (for now, just log it)
             try {
-                // TODO: Implement actual SMS sending
-                // SMS::send($mobile, "Your OTP is: {$otp}");
-                Log::info("Mobile OTP for {$mobile}: {$otp}");
-            } catch (Exception $e) {
-                Log::error('Failed to send mobile OTP: '.$e->getMessage());
+                $this->myTodayBulkSms->sendOtp($mobile, $otp, 'registration');
+            } catch (\RuntimeException $e) {
+                session()->forget([$otpKey, $otpTimeKey]);
+                Log::error('Mobile OTP SMS failed (registration): '.$e->getMessage());
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to send OTP to your mobile. Please try again later.',
+                ], 500);
             }
 
             return response()->json([
                 'success' => true,
                 'message' => 'OTP sent to your mobile.',
-                'otp' => config('app.debug') ? $otp : null, // Only show in debug mode
+                'otp' => config('app.debug') ? $otp : null,
             ]);
         } catch (ValidationException $e) {
             return response()->json([

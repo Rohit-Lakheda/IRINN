@@ -154,7 +154,7 @@
             $roleSlug = $selectedRole ?? null;
 
             if ($adminId && $roleSlug) {
-                $unreadApplicationCount = \App\Models\Application::where('application_type', 'IX')
+                $unreadApplicationCount = \App\Models\Application::where('application_type', 'IRINN')
                     ->whereNotNull('submitted_at')
                     ->whereDoesntHave('readByAdmins', function ($query) use ($adminId, $roleSlug) {
                         $query->where('admins.id', $adminId)
@@ -255,17 +255,6 @@
                                     </svg>
                                 </span>
                                 <span class="sidebar-nav-text">Grievance</span>
-                            </a>
-                        </li>
-                        <li class="sidebar-nav-item">
-                            <a class="sidebar-nav-link sidebar-nav-sublink" href="{{ route('admin.plan-change.index') }}">
-                                <span class="sidebar-nav-icon">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                                        <path d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.418A6 6 0 1 1 8 2v1Z"/>
-                                        <path d="M8 0a.5.5 0 0 1 .5.5v3a.5.5 0 1 1-1 0v-3A.5.5 0 0 1 8 0Z"/>
-                                    </svg>
-                                </span>
-                                <span class="sidebar-nav-text">Plan Changes</span>
                             </a>
                         </li>
                         <li class="sidebar-nav-item">

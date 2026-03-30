@@ -136,7 +136,7 @@ class UserPaymentController extends Controller
                 'payment_mode' => 'wallet',
                 'amount' => $paymentAmount,
                 'currency' => 'INR',
-                'product_info' => 'NIXI IX Service Invoice - '.$invoice->invoice_number,
+                'product_info' => 'NIXI IRINN Invoice - '.$invoice->invoice_number,
                 'response_message' => 'Invoice payment via wallet',
             ]);
 
@@ -239,20 +239,24 @@ class UserPaymentController extends Controller
                 'payment_mode' => config('services.payu.mode', 'test'),
                 'amount' => $paymentAmount,
                 'currency' => 'INR',
-                'product_info' => 'NIXI IX Service Invoice - '.$invoice->invoice_number,
+                'product_info' => 'NIXI IRINN Invoice - '.$invoice->invoice_number,
                 'response_message' => 'Invoice payment pending',
             ]);
+
+            $successRoute = 'user.applications.irin.payment-success';
+            $failureRoute = 'user.applications.irin.payment-failure';
+            $productLabel = 'IRINN Invoice - '.$invoice->invoice_number;
 
             // Prepare payment data with all required parameters
             $paymentData = $payuService->preparePaymentData([
                 'transaction_id' => $transactionId,
                 'amount' => $paymentAmount,
-                'product_info' => 'NIXI IX Service Invoice - '.$invoice->invoice_number,
+                'product_info' => $productLabel,
                 'firstname' => $user->fullname,
                 'email' => $user->email,
                 'phone' => $user->mobile,
-                'success_url' => url(route('user.applications.ix.payment-success', [], false)),
-                'failure_url' => url(route('user.applications.ix.payment-failure', [], false)),
+                'success_url' => url(route($successRoute, [], false)),
+                'failure_url' => url(route($failureRoute, [], false)),
                 'udf1' => $application->application_id,
                 'udf2' => (string) $paymentTransaction->id,
                 'udf3' => $invoice->invoice_number, // Invoice number for identification
@@ -385,7 +389,7 @@ class UserPaymentController extends Controller
                     'payment_mode' => 'wallet',
                     'amount' => $paymentAmount,
                     'currency' => 'INR',
-                    'product_info' => 'NIXI IX Service Invoice - '.$invoice->invoice_number,
+                    'product_info' => 'NIXI IRINN Invoice - '.$invoice->invoice_number,
                     'response_message' => 'Bulk invoice payment via wallet',
                 ]);
 
@@ -525,8 +529,8 @@ class UserPaymentController extends Controller
                 'firstname' => $user->fullname,
                 'email' => $user->email,
                 'phone' => $user->mobile,
-                'success_url' => url(route('user.applications.ix.payment-success', [], false)),
-                'failure_url' => url(route('user.applications.ix.payment-failure', [], false)),
+                'success_url' => url(route('user.applications.irin.payment-success', [], false)),
+                'failure_url' => url(route('user.applications.irin.payment-failure', [], false)),
                 'udf1' => $firstApplication->application_id,
                 'udf2' => (string) $paymentTransaction->id,
                 'udf3' => 'BULK-'.implode(',', $invoiceIds), // Store invoice IDs

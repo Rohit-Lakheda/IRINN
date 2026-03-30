@@ -10,6 +10,9 @@
                 <h4 class="mb-0">Request Profile Update</h4>
             </div>
             <div class="card-body">
+                <p class="alert alert-info small mb-4">
+                    <strong>Note:</strong> Your <strong>registered email</strong> and <strong>registered mobile number</strong> can be updated directly from your profile using <strong>Update email &amp; mobile</strong>. Use this request only for other changes that need admin review.
+                </p>
                 <p class="lead fs-6">
                     Please describe the changes you want to make to your profile. Once submitted, an admin will review your request and approve it if appropriate.
                 </p>

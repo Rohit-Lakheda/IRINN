@@ -36,7 +36,7 @@ class MarkExistingApplicationsRead extends Command
         try {
             // Get all submitted IX applications (these are considered existing applications)
             $applicationsQuery = Application::query()
-                ->where('application_type', 'IX')
+                ->where('application_type', 'IRINN')
                 ->whereNotNull('submitted_at')
                 ->select('id');
 

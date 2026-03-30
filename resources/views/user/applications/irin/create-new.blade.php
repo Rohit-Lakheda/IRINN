@@ -1,1157 +1,1778 @@
 @extends('user.layout')
 
-@section('title', 'New IRINN Application')
-
-@php
-    $fromPreview = request()->get('from_preview') == '1';
-    $isResubmission = isset($isResubmission) && $isResubmission && isset($application);
-    $previewData = $isResubmission ? ($application->application_data ?? []) : session('irin_preview_data', []);
-    $hasPreview = function (string $keyPath) use ($previewData): bool {
-        $val = data_get($previewData, $keyPath);
-        if (is_array($val)) return count($val) > 0;
-        return !empty($val);
-    };
-    $prefill = $prefill ?? [];
-    $resubmissionReason = $resubmissionReason ?? '';
-    $currentAffiliate = old('affiliate_type', $prefill['affiliate_type'] ?? '');
-    $currentDomain = old('domain_required', $prefill['domain_required'] ?? 'yes');
-    $currentAsn = old('asn_required', $prefill['asn_required'] ?? 'no');
-@endphp
+@section('title', 'IRINN Application')
 
 @push('styles')
 <style>
-    .irinn-form-container {
-        max-width: 960px;
-        margin: 0 auto;
-        padding: 20px;
-    }
-    .form-step {
-        background: #fff;
-        border: 1px solid rgba(124, 58, 237, 0.15);
-        border-radius: 14px;
-        padding: 28px;
-        margin-bottom: 30px;
-        box-shadow: 0 2px 12px rgba(124, 58, 237, 0.08);
-        display: none;
-    }
-    .form-step.active {
-        display: block;
-    }
-    .form-step h3 {
-        color: #5b21b6;
-        font-size: 1.15rem;
-        font-weight: 600;
-        margin-bottom: 20px;
-        padding-bottom: 10px;
-        border-bottom: 2px solid rgba(124, 58, 237, 0.35);
-    }
-    .form-group {
-        margin-bottom: 1rem;
-    }
-    .form-label {
-        font-weight: 500;
-        color: #374151;
-        margin-bottom: 6px;
-        display: block;
-    }
-    .required {
-        color: #7c3aed;
-    }
-    .file-upload-area {
-        border: 2px dashed rgba(124, 58, 237, 0.3);
-        border-radius: 10px;
-        padding: 20px;
-        text-align: center;
-        background: rgba(124, 58, 237, 0.04);
-        margin-top: 8px;
-    }
-    .file-upload-area:hover {
-        border-color: #7c3aed;
-        background: rgba(124, 58, 237, 0.08);
-    }
-    .btn-action-group {
-        display: flex;
-        gap: 12px;
-        justify-content: space-between;
-        align-items: flex-start;
-        margin-top: 28px;
-        padding-top: 20px;
-        border-top: 1px solid rgba(124, 58, 237, 0.12);
-    }
-    .btn-action-group > button {
-        flex-shrink: 0;
-        border-radius: 10px;
-    }
-    .btn-action-group > div {
-        display: flex;
-        flex-direction: column;
-        align-items: flex-end;
-        gap: 10px;
-    }
-    .declaration-box {
-        background: rgba(124, 58, 237, 0.08);
-        border: 1px solid rgba(124, 58, 237, 0.25);
-        border-radius: 10px;
-        padding: 15px;
-        margin: 20px 0;
-    }
-    .upstream-provider-form {
-        background: rgba(124, 58, 237, 0.05);
-        padding: 18px;
-        border-radius: 10px;
-        margin-top: 15px;
-        border: 1px solid rgba(124, 58, 237, 0.12);
-    }
-    .pricing-display {
-        background: rgba(124, 58, 237, 0.08);
-        border: 1px solid rgba(124, 58, 237, 0.25);
-        border-radius: 10px;
-        padding: 15px;
-        margin-top: 15px;
-    }
-    .pricing-display h5 {
-        color: #5b21b6;
-        margin-bottom: 10px;
-    }
-    .pricing-row {
-        display: flex;
-        justify-content: space-between;
-        padding: 8px 0;
-        border-bottom: 1px solid rgba(124, 58, 237, 0.15);
-    }
-    .pricing-row:last-child {
-        border-bottom: none;
-        font-weight: bold;
-        font-size: 1rem;
-        margin-top: 10px;
-        padding-top: 15px;
-        border-top: 2px solid rgba(124, 58, 237, 0.3);
-    }
-    .step-indicator {
-        display: flex;
-        justify-content: center;
-        gap: 8px;
-        margin-bottom: 32px;
-        flex-wrap: wrap;
-    }
-    .step-item {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        cursor: pointer;
-        transition: transform 0.2s;
-    }
-    .step-item:hover.visited .step-dot {
-        transform: scale(1.05);
-    }
-    .step-dot {
-        width: 44px;
-        height: 44px;
-        border-radius: 50%;
-        background: #e5e7eb;
-        color: #6b7280;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: 700;
-        font-size: 0.95rem;
-        transition: all 0.25s;
-    }
-    .step-item.visited .step-dot {
-        background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 100%);
-        color: #fff;
-    }
-    .step-item.active .step-dot {
-        background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
-        color: #fff;
-        box-shadow: 0 4px 14px rgba(124, 58, 237, 0.4);
-    }
-    .step-item .step-label {
-        font-size: 0.7rem;
-        color: #6b7280;
-        margin-top: 6px;
-        max-width: 72px;
-        text-align: center;
-        line-height: 1.2;
-    }
-    .step-item.active .step-label,
-    .step-item.visited .step-label {
-        color: #5b21b6;
-        font-weight: 500;
-    }
-    .agreement-download-btn {
-        margin-bottom: 15px;
-    }
-    .irinn-form-container .btn-primary {
-        background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
-        border: none;
-        border-radius: 10px;
-    }
-    .irinn-form-container .btn-primary:hover {
-        opacity: 0.95;
-    }
+    .flow-wrap { max-width: 1100px; margin: 0 auto; }
+    .flow-card { border: 1px solid rgba(124, 58, 237, 0.16); border-radius: 14px; box-shadow: 0 2px 10px rgba(124, 58, 237, 0.08); }
+    .flow-step { display: none; }
+    .flow-step.active { display: block; }
+    .req { color: #dc3545; }
+    .readonly-like { background: #f8f9fa; pointer-events: none; }
+    .stepper .badge { min-width: 32px; cursor: pointer; }
 </style>
 @endpush
 
 @section('content')
 <div class="container-fluid py-4">
-    <div class="irinn-form-container">
-        @if($isResubmission)
-        <div class="alert alert-warning border-warning mb-4">
-            <h5 class="alert-heading">Resubmission requested</h5>
-            <p class="mb-2">Admin has requested changes to your application. Please update the details below as needed and resubmit. <strong>No payment is required</strong> — payment was already received.</p>
-            @if($resubmissionReason)
-            <hr>
-            <p class="mb-0"><strong>Admin message:</strong><br>{{ $resubmissionReason }}</p>
-            @endif
-        </div>
-        @endif
-        <div class="mb-4">
-            <h2 class="mb-2 text-blue fw-bold">{{ $isResubmission ? 'Edit & Resubmit IRINN Application' : 'IRINN Application' }}</h2>
-            <p class="text-muted mb-0">{{ $isResubmission ? 'Update the details below and resubmit. All existing data and documents are prefilled.' : 'Complete all steps to submit your IRINN application. You can go back to any step you have already filled.' }}</p>
-            <div class="accent-line mt-2"></div>
-        </div>
-
-        <!-- Step Indicator with labels -->
-        <div class="step-indicator">
-            <div class="step-item active visited" data-step="1" title="Application [IRINN]">
-                <div class="step-dot">1</div>
-                <span class="step-label">Application</span>
-            </div>
-            <div class="step-item" data-step="2" title="New Resources">
-                <div class="step-dot">2</div>
-                <span class="step-label">Resources</span>
-            </div>
-            <div class="step-item" data-step="3" title="Agreement & Documents">
-                <div class="step-dot">3</div>
-                <span class="step-label">Documents</span>
-            </div>
-            <div class="step-item" data-step="4" title="Resource Justification">
-                <div class="step-dot">4</div>
-                <span class="step-label">Justification</span>
-            </div>
-            <div class="step-item" data-step="5" title="Payment">
-                <div class="step-dot">5</div>
-                <span class="step-label">Payment</span>
-            </div>
-        </div>
-
-        <form id="irinnApplicationForm" method="POST" action="{{ $isResubmission ? route('user.applications.irin.resubmit.store', $application->id) : route('user.applications.irin.store-new') }}" enctype="multipart/form-data">
-            @csrf
-            @if($fromPreview && !$isResubmission)
-                <input type="hidden" name="from_preview" value="1">
-            @endif
-
-            <!-- Step 1: Application [IRINN] -->
-            <div class="form-step active" id="step1" data-step="1">
-                <h3>Step 1: Application [IRINN]</h3>
-                <div class="row g-3">
-                    <div class="col-md-6">
-                        <div class="form-group mb-0">
-                            <label class="form-label">Affiliate Type <span class="required">*</span></label>
-                            <select class="form-select" name="affiliate_type" id="affiliate_type" required>
-                                <option value="">Select affiliate type</option>
-                                <option value="new" {{ $currentAffiliate == 'new' ? 'selected' : '' }}>Affiliate – New</option>
-                                <option value="transfer" {{ $currentAffiliate == 'transfer' ? 'selected' : '' }}>Affiliate – Transfer from APNIC</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="form-group mb-0">
-                            <label class="form-label">Is .IN domain name required? <span class="required">*</span></label>
-                            <div class="d-flex gap-4 pt-2">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="radio" name="domain_required" id="domain_yes" value="yes" required {{ $currentDomain == 'yes' ? 'checked' : '' }}>
-                                    <label class="form-check-label" for="domain_yes">Yes</label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input" type="radio" name="domain_required" id="domain_no" value="no" required {{ $currentDomain == 'no' ? 'checked' : '' }}>
-                                    <label class="form-check-label" for="domain_no">No</label>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="btn-action-group">
-                    <div></div>
-                    <button type="button" class="btn btn-primary" onclick="nextStep()">Next</button>
-                </div>
-            </div>
-
-            <!-- Step 2: New Resources -->
-            <div class="form-step" id="step2" data-step="2">
-                <h3>Step 2: New Resources</h3>
-                <p class="text-muted small mb-2">At least one of IPv4 or IPv6 is required. You may fill both or either one.</p>
-                <div class="row g-3">
-                    <div class="col-md-4">
-                        <div class="form-group mb-0">
-                            <label class="form-label">IPv4 (Internet Protocol)</label>
-                            <select class="form-select" name="ipv4_prefix" id="ipv4_prefix" onchange="updatePricing(); clearIpStep2Validity();">
-                                <option value="">Select IPv4 prefix</option>
-                            </select>
-                            <small class="text-muted" id="ipv4_pricing_info"></small>
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="form-group mb-0">
-                            <label class="form-label">IPv6 (Internet Protocol)</label>
-                            <select class="form-select" name="ipv6_prefix" id="ipv6_prefix" onchange="updatePricing(); clearIpStep2Validity();">
-                                <option value="">Select IPv6 prefix</option>
-                            </select>
-                            <small class="text-muted" id="ipv6_pricing_info"></small>
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="form-group mb-0">
-                            <label class="form-label">Autonomous System Number (ASN) <span class="required">*</span></label>
-                            <select class="form-select" name="asn_required" id="asn_required" required>
-                                <option value="">Select</option>
-                                <option value="yes" {{ $currentAsn == 'yes' ? 'selected' : '' }}>Yes</option>
-                                <option value="no" {{ $currentAsn == 'no' ? 'selected' : '' }}>No</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Pricing Display -->
-                <div class="pricing-display" id="pricingDisplay" style="display: none;">
-                    <h5>Fee Calculation</h5>
-                    <div class="pricing-row">
-                        <span>Base Amount:</span>
-                        <span id="max_ip_fee">₹ 0</span>
-                    </div>
-                    <div class="pricing-row" id="gst_row" style="display: none;">
-                        <span>GST:</span>
-                        <span id="gst_amount">₹ 0</span>
-                    </div>
-                    <div class="pricing-row">
-                        <span>Total Fee (Including GST):</span>
-                        <span id="total_fee">₹ 0</span>
-                    </div>
-                </div>
-
-                <div class="btn-action-group">
-                    <button type="button" class="btn btn-secondary" onclick="previousStep()">Previous</button>
-                    <button type="button" class="btn btn-primary" onclick="nextStep()">Next</button>
-                </div>
-            </div>
-
-            <!-- Step 3: IRINN Agreement and Documents -->
-            <div class="form-step" id="step3" data-step="3">
-                <h3>Step 3: IRINN Agreement and Documents</h3>
-                
-                <div class="form-group">
-                    <label class="form-label">Board Resolution / Authority Letter / Self-Declaration <span class="required">*</span></label>
-                    <div class="small text-muted mb-2">
-                        <ul class="mb-0">
-                            <li>Provide board resolution (in case of company) and authority letter (in case of partnership/llp) duly signed and stamped by minimum 50% of directors/ partners except the authorized signatory.</li>
-                            <li>Provide self-declaration in case of sole proprietorship.</li>
-                        </ul>
-                    </div>
-                    <div class="file-upload-area">
-                        <input type="file" class="form-control" name="board_resolution_file" id="board_resolution_file" accept="application/pdf,image/*" {{ ($fromPreview || $isResubmission) && $hasPreview('part3.board_resolution_file') ? '' : 'required' }}>
-                        <small class="text-muted">
-                            Upload PDF or Image file
-                            @if(($fromPreview || $isResubmission) && $hasPreview('part3.board_resolution_file'))
-                                <span class="ms-2 badge rounded-pill text-bg-success">Already uploaded</span>
-                                <a class="ms-2" target="_blank" href="{{ $isResubmission ? route('user.applications.irin.resubmit.document', [$application->id, 'board_resolution_file']) : route('user.applications.irin.preview-document', ['doc' => 'board_resolution_file']) }}">View</a>
-                            @endif
-                        </small>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label">IRINN Agreement <span class="required">*</span></label>
-                    <div class="small text-muted mb-2">
-                        <ul class="mb-0">
-                            <li>Provide filled IRINN agreement with all required fields duly signed and stamped by authorized signatory on bottom right of all pages.</li>
-                            <li>Signed the same with digital signature (Mention the verification process for the same)</li>
-                            <li>If signed physically provide the signature proof (PAN/ Passport/ Driving License)</li>
-                        </ul>
-                    </div>
-                    <div class="agreement-download-btn">
-                        <a href="{{ route('user.applications.irin.download-agreement') }}" class="btn btn-outline-primary" target="_blank">
-                            <i class="bi bi-download"></i> Download IRINN Agreement (Prefilled)
-                        </a>
-                    </div>
-                    <div class="file-upload-area">
-                        <input type="file" class="form-control" name="irinn_agreement_file" id="irinn_agreement_file" accept="application/pdf,image/*" {{ ($fromPreview || $isResubmission) && $hasPreview('part3.irinn_agreement_file') ? '' : 'required' }}>
-                        <small class="text-muted">
-                            Upload PDF or Image file
-                            @if(($fromPreview || $isResubmission) && $hasPreview('part3.irinn_agreement_file'))
-                                <span class="ms-2 badge rounded-pill text-bg-success">Already uploaded</span>
-                                <a class="ms-2" target="_blank" href="{{ $isResubmission ? route('user.applications.irin.resubmit.document', [$application->id, 'irinn_agreement_file']) : route('user.applications.irin.preview-document', ['doc' => 'irinn_agreement_file']) }}">View</a>
-                            @endif
-                        </small>
-                    </div>
-                </div>
-
-                <div class="btn-action-group">
-                    <button type="button" class="btn btn-secondary" onclick="previousStep()">Previous</button>
-                    <button type="button" class="btn btn-primary" onclick="nextStep()">Next</button>
-                </div>
-            </div>
-
-            <!-- Step 4: Resource Justification Requirement -->
-            <div class="form-step" id="step4" data-step="4">
-                <h3>Step 4: Resource Justification Requirement</h3>
-                
-                <div class="form-group">
-                    <label class="form-label">Network Diagram <span class="required">*</span></label>
-                    <div class="small text-muted mb-2">
-                        Network Diagram with proper IP distribution on each node, number of router, switches, firewall must be mentioned on diagram.
-                    </div>
-                    <div class="file-upload-area">
-                        <input type="file" class="form-control" name="network_diagram_file" id="network_diagram_file" accept="application/pdf,image/*" {{ ($fromPreview || $isResubmission) && $hasPreview('part4.network_diagram_file') ? '' : 'required' }}>
-                        <small class="text-muted">
-                            Upload PDF or Image file
-                            @if(($fromPreview || $isResubmission) && $hasPreview('part4.network_diagram_file'))
-                                <span class="ms-2 badge rounded-pill text-bg-success">Already uploaded</span>
-                                <a class="ms-2" target="_blank" href="{{ $isResubmission ? route('user.applications.irin.resubmit.document', [$application->id, 'network_diagram_file']) : route('user.applications.irin.preview-document', ['doc' => 'network_diagram_file']) }}">View</a>
-                            @endif
-                        </small>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label">Core Physical Equipment Invoice <span class="required">*</span></label>
-                    <div class="small text-muted mb-2">
-                        Submit the Core physical equipment invoice and Endpoint device invoice signed and stamped by vendor. The invoice shows Equipment like Routers & Switches in the invoice.
-                    </div>
-                    <div class="file-upload-area">
-                        <input type="file" class="form-control" name="equipment_invoice_file" id="equipment_invoice_file" accept="application/pdf,image/*" {{ ($fromPreview || $isResubmission) && $hasPreview('part4.equipment_invoice_file') ? '' : 'required' }}>
-                        <small class="text-muted">
-                            Upload PDF or Image file
-                            @if(($fromPreview || $isResubmission) && $hasPreview('part4.equipment_invoice_file'))
-                                <span class="ms-2 badge rounded-pill text-bg-success">Already uploaded</span>
-                                <a class="ms-2" target="_blank" href="{{ $isResubmission ? route('user.applications.irin.resubmit.document', [$application->id, 'equipment_invoice_file']) : route('user.applications.irin.preview-document', ['doc' => 'equipment_invoice_file']) }}">View</a>
-                            @endif
-                        </small>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label">Bandwidth Invoice (Last 3 months) <span class="required">*</span></label>
-                    <div class="file-upload-area">
-                        <input type="file" class="form-control" name="bandwidth_invoice_file[]" id="bandwidth_invoice_file" accept="application/pdf,image/*" multiple {{ ($fromPreview || $isResubmission) && $hasPreview('part4.bandwidth_invoice_file') ? '' : 'required' }}>
-                        <small class="text-muted">
-                            Upload PDF or Image files (can upload multiple files for last 3 months)
-                            @if(($fromPreview || $isResubmission) && $hasPreview('part4.bandwidth_invoice_file'))
-                                @php $bw = data_get($previewData, 'part4.bandwidth_invoice_file', []); @endphp
-                                <span class="ms-2 badge rounded-pill text-bg-success">Already uploaded ({{ is_array($bw) ? count($bw) : 0 }})</span>
-                                @if(is_array($bw) && count($bw) > 0)
-                                    <span class="ms-2">
-                                        @foreach($bw as $i => $p)
-                                            <a class="me-2" target="_blank" href="{{ $isResubmission ? route('user.applications.irin.resubmit.document', [$application->id, 'bandwidth_invoice_file']) : route('user.applications.irin.preview-document', ['doc' => 'bandwidth_invoice_file']) }}?index={{ $i }}">View {{ $i+1 }}</a>
-                                        @endforeach
-                                    </span>
-                                @endif
-                            @endif
-                        </small>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label">Bandwidth Agreement <span class="required">*</span></label>
-                    <div class="small text-muted mb-2">
-                        Bandwidth Agreement with your upstream provider signed and stamped by both parties.
-                    </div>
-                    <div class="file-upload-area">
-                        <input type="file" class="form-control" name="bandwidth_agreement_file" id="bandwidth_agreement_file" accept="application/pdf,image/*" {{ ($fromPreview || $isResubmission) && $hasPreview('part4.bandwidth_agreement_file') ? '' : 'required' }}>
-                        <small class="text-muted">
-                            Upload PDF or Image file
-                            @if(($fromPreview || $isResubmission) && $hasPreview('part4.bandwidth_agreement_file'))
-                                <span class="ms-2 badge rounded-pill text-bg-success">Already uploaded</span>
-                                <a class="ms-2" target="_blank" href="{{ $isResubmission ? route('user.applications.irin.resubmit.document', [$application->id, 'bandwidth_agreement_file']) : route('user.applications.irin.preview-document', ['doc' => 'bandwidth_agreement_file']) }}">View</a>
-                            @endif
-                        </small>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label">Upstream Provider Details <span class="required">*</span></label>
-                    <div class="small text-muted mb-2">Provide upstream provider details in the below-mentioned format (For verification)</div>
-                    <div class="upstream-provider-form">
-                        <div class="row g-3">
-                            <div class="col-md-4">
-                                <label class="form-label">Name <span class="required">*</span></label>
-                                <input type="text" class="form-control" name="upstream_name" id="upstream_name" value="{{ old('upstream_name', $prefill['upstream_name'] ?? '') }}" required>
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label">Mobile <span class="required">*</span></label>
-                                <input type="tel" class="form-control" name="upstream_mobile" id="upstream_mobile" maxlength="10" value="{{ old('upstream_mobile', $prefill['upstream_mobile'] ?? '') }}" required>
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label">Email <span class="required">*</span></label>
-                                <input type="email" class="form-control" name="upstream_email" id="upstream_email" value="{{ old('upstream_email', $prefill['upstream_email'] ?? '') }}" required>
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label">Organization Name <span class="required">*</span></label>
-                                <input type="text" class="form-control" name="upstream_org_name" id="upstream_org_name" value="{{ old('upstream_org_name', $prefill['upstream_org_name'] ?? '') }}" required>
-                            </div>
-                            <div class="col-md-8">
-                                <label class="form-label">Peering ASN Details <span class="required">*</span></label>
-                                <input type="text" class="form-control" name="upstream_asn_details" id="upstream_asn_details" value="{{ old('upstream_asn_details', $prefill['upstream_asn_details'] ?? '') }}" required>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="btn-action-group">
-                    <button type="button" class="btn btn-secondary" onclick="previousStep()">Previous</button>
-                    <button type="button" class="btn btn-primary" onclick="nextStep()">Next</button>
-                </div>
-            </div>
-
-            <!-- Step 5: Payment (or Resubmit only when resubmission) -->
-            <div class="form-step" id="step5" data-step="5">
-                <h3>Step 5: {{ $isResubmission ? 'Resubmit Application' : 'Payment' }}</h3>
-                
-                @if(!$isResubmission)
-                <div class="declaration-box">
-                    <p class="mb-0"><strong>Declaration:</strong> We agree to pay application fee of Rs.1000 + applicable taxes will be demanded at the time of submission of this application and will not adjusted in any future in any another/future invoice.</p>
-                </div>
-
-                <div class="form-check mb-3">
-                    <input class="form-check-input" type="checkbox" name="payment_declaration" id="payment_declaration" value="1" required>
-                    <label class="form-check-label" for="payment_declaration">
-                        I agree to the above declaration <span class="required">*</span>
-                    </label>
-                </div>
+    <div class="flow-wrap">
+        <div class="mb-3">
+            <h2 class="mb-1 text-blue fw-bold">
+                @if(!empty($isNormalizedResubmission))
+                    Resubmit IRINN application
                 @else
-                <p class="text-muted">No payment required. Click <strong>Resubmit Application</strong> below to submit your updated details.</p>
+                    IRINN Application
+                @endif
+            </h2>
+            <p class="text-muted mb-0">
+                @if(!empty($isNormalizedResubmission))
+                    Your details are prefilled. Update any fields or documents as needed, then submit. Email and mobile OTP verification is not required for this resubmission.
+                @else
+                    Configure and verify technical person flow details.
+                @endif
+            </p>
+        </div>
+
+        @if(!empty($isNormalizedResubmission) && !empty($resubmissionReason))
+            <div class="alert alert-warning border-warning mb-3">
+                <strong>Admin requested changes:</strong>
+                <div class="small mt-2 mb-0" style="white-space: pre-wrap;">{{ $resubmissionReason }}</div>
+            </div>
+        @endif
+
+        @if(!empty($isNormalizedResubmission))
+            <div class="alert alert-info border-info mb-3 small">
+                <strong>About documents:</strong> Your answers above are pre-filled. Uploaded files cannot appear inside the file picker (browser security).
+                Where a document was already submitted, use <strong>View current upload</strong> to open it. Choose a new file only when you need to replace that document.
+            </div>
+        @endif
+
+        <div class="d-flex align-items-center gap-2 mb-3 stepper">
+            <span class="badge bg-primary" id="s1Badge">1</span><small class="text-muted me-2">Organisation</small>
+            <span class="badge bg-secondary" id="s2Badge">2</span><small class="text-muted me-2">Management Representative</small>
+            <span class="badge bg-secondary" id="s3Badge">3</span><small class="text-muted me-2">Technical Person & Abuse Contact</small>
+            <span class="badge bg-secondary" id="s4Badge">4</span><small class="text-muted me-2">Billing Representative</small>
+            <span class="badge bg-secondary" id="s5Badge">5</span><small class="text-muted me-2">Network Resources</small>
+            <span class="badge bg-secondary" id="s6Badge">6</span><small class="text-muted me-2">Upstream &amp; Signatory</small>
+            <span class="badge bg-secondary" id="s7Badge">7</span><small class="text-muted">KYC Documents</small>
+        </div>
+
+        <form id="irinnFlowForm" class="flow-card bg-white p-3 p-md-4">
+            @csrf
+            <input type="hidden" name="irinn_normalized_flow" value="1">
+            <input type="hidden" name="irinn_form_version" value="create_new_v1">
+            <input type="hidden" name="irinn_current_stage" value="submitted">
+            @if(!empty($isNormalizedResubmission) && isset($application))
+                <input type="hidden" name="irinn_resubmit_application_id" value="{{ $application->id }}">
+            @endif
+            <div id="irinnFlowHiddenSync" class="d-none" aria-hidden="true"></div>
+            <input type="hidden" id="company_name_source" value="">
+            <input type="hidden" id="gst_verification_request_id" name="gst_verification_request_id" value="">
+            <input type="hidden" id="mca_verification_request_id" name="mca_verification_request_id" value="">
+
+            <div id="step1" class="flow-step active">
+                <h5 class="mb-3">Step 1: Organisation Details</h5>
+
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Company Type <span class="req">*</span></label>
+                        <select class="form-select" id="company_type" name="irinn_company_type" required>
+                            <option value="">Select</option>
+                            <option value="private_limited">Private Limited</option>
+                            <option value="public_limited">Public Limited</option>
+                            <option value="llp">Limited Liability Partnership (LLP)</option>
+                            <option value="opc">One Person Company (OPC)</option>
+                            <option value="psu">Public Sector Undertaking (PSU)</option>
+                            <option value="partnership">Partnership</option>
+                            <option value="proprietor">Proprietor</option>
+                            <option value="government">Government</option>
+                            <option value="ngo">NGO</option>
+                            <option value="academia_institute">Academia institute</option>
+                            <option value="trust">Trust</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6" id="cinWrap" style="display:none;">
+                        <label class="form-label">CIN Number <span class="req">*</span></label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="cin_number" name="irinn_cin_number" placeholder="Enter CIN">
+                            <button class="btn btn-primary" type="button" id="verifyCinBtn">Verify CIN</button>
+                        </div>
+                        <small id="cinStatus" class="text-muted"></small>
+                    </div>
+
+                    <div class="col-md-6" id="udyamWrap" style="display:none;">
+                        <label class="form-label">Udyam Number <span class="req">*</span></label>
+                        <input type="text" class="form-control" id="udyam_number" name="irinn_udyam_number" placeholder="Enter Udyam Number">
+                        <small class="text-muted">Manual entry mode (no API integration for now).</small>
+                    </div>
+
+                    <div class="col-md-6" id="regDocWrap" style="display:none;">
+                        <label class="form-label">Upload Registration Document <span class="req">*</span></label>
+                        @include('user.applications.irin.partials.resubmit-doc-hint', ['docColumn' => 'irinn_registration_document_path'])
+                        <input type="file" class="form-control" id="registration_document" name="irinn_registration_document" accept=".pdf,.jpg,.jpeg,.png,.webp">
+                    </div>
+                </div>
+
+                <hr class="my-3">
+
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Organisation Name <span class="req">*</span></label>
+                        <input type="text" class="form-control org-field" id="organisation_name" name="irinn_organisation_name" required>
+                    </div>
+                    <div class="col-md-8">
+                        <label class="form-label">Address <span class="req">*</span></label>
+                        <input type="text" class="form-control org-field" id="organisation_address" name="irinn_organisation_address" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Postcode <span class="req">*</span></label>
+                        <input type="text" class="form-control org-field" id="organisation_postcode" name="irinn_organisation_postcode" required maxlength="10">
+                    </div>
+                    <div class="col-md-6" id="industryTypeWrap">
+                        <label class="form-label">Industry Type <span class="req">*</span></label>
+                        <select class="form-select" id="industry_type" name="irinn_industry_type" required>
+                            <option value="">Select</option>
+                            <option>Government</option>
+                            <option>Banking and Financial Services</option>
+                            <option>ISP A -- All Over India</option>
+                            <option>ISP B -- For Particular State</option>
+                            <option>ISP C -- For Particular District</option>
+                            <option>Hosting or Data Centre</option>
+                            <option>IT or Software</option>
+                            <option>Enterprise or Manufacturing</option>
+                            <option>Media or Entertainment</option>
+                            <option>VNO License</option>
+                            <option>Other</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Account Name (auto-generated)</label>
+                        <input type="text" class="form-control readonly-like" id="account_name" name="irinn_account_name" readonly>
+                    </div>
+                </div>
+
+                <hr class="my-3">
+
+                <h6 class="mb-2">Billing Details</h6>
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" id="has_gst_number" name="irinn_has_gst_number" value="1">
+                    <label class="form-check-label" for="has_gst_number">Do you have GST Number?</label>
+                </div>
+
+                <div id="gstBillingWrap" style="display:none;">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">GST Number <span class="req">*</span></label>
+                            <div class="input-group">
+                                <input type="text" class="form-control" id="billing_gstin" name="irinn_billing_gstin" maxlength="15" placeholder="Enter GST Number">
+                                <button type="button" class="btn btn-primary" id="verifyBillingGstBtn">Verify GST</button>
+                            </div>
+                            <small id="gstBillingStatus" class="text-muted"></small>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="nonGstBillingWrap">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">CA Declaration File <span class="req">*</span></label>
+                            @include('user.applications.irin.partials.resubmit-doc-hint', ['docColumn' => 'irinn_ca_declaration_path'])
+                            <input type="file" class="form-control" id="ca_declaration_file" name="irinn_ca_declaration_file" accept=".pdf,.jpg,.jpeg,.png,.webp">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row g-3 mt-1">
+                    <div class="col-md-4">
+                        <label class="form-label">Legal Name <span class="req">*</span></label>
+                        <input type="text" class="form-control bill-field" id="billing_legal_name" name="irinn_billing_legal_name" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">PAN Number <span class="req">*</span></label>
+                        <input type="text" class="form-control bill-field" id="billing_pan_number" name="irinn_billing_pan" maxlength="10" required>
+                    </div>
+                    <div class="col-md-8">
+                        <label class="form-label">Address <span class="req">*</span></label>
+                        <input type="text" class="form-control bill-field" id="billing_address" name="irinn_billing_address" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Postcode <span class="req">*</span></label>
+                        <input type="text" class="form-control bill-field" id="billing_postcode" name="irinn_billing_postcode" required maxlength="10">
+                    </div>
+                </div>
+                <small id="nameMatchStatus" class="text-danger d-none">Organisation Name and Legal Name do not match (minimum 70% required).</small>
+
+                <div class="d-flex justify-content-end mt-4">
+                    <button type="button" class="btn btn-primary" id="goStep2Btn">Next</button>
+                </div>
+            </div>
+
+            <div id="step2" class="flow-step">
+                <h5 class="mb-3">Step 2: Management Representative Details</h5>
+                <div class="alert alert-info small py-2 mb-3" role="alert">
+                    <strong>Verification:</strong> Email OTP is sent using your application mail settings.
+                    Mobile OTP is sent by SMS when SMS is enabled in server configuration (in local/debug without SMS, the OTP may appear on screen for testing only). After you verify each field, it becomes read-only.
+                </div>
+
+                <div class="row g-3">
+                    <div class="col-md-12" id="repSelectWrap" style="display:none;">
+                        <label class="form-label">Select Director (from CIN) <span class="req">*</span></label>
+                        <select class="form-select" id="management_rep_select" name="irinn_management_rep_index">
+                            <option value="">Select director</option>
+                        </select>
+                        <small class="text-muted">Directors are loaded after CIN verification. Only active directors (no end date) are listed.</small>
+                    </div>
+                </div>
+
+                <div class="row g-3 mt-1">
+                    <div class="col-md-6">
+                        <label class="form-label">Name <span class="req">*</span></label>
+                        <input type="text" class="form-control" id="mr_name" name="irinn_mr_name" required>
+                        <input type="hidden" id="mr_director_din" name="irinn_mr_din" value="">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Designation <span class="req">*</span></label>
+                        <select class="form-select" id="mr_designation" name="irinn_mr_designation" required>
+                            <option value="">Select</option>
+                            <option>Chief Executive Officer (CEO)</option>
+                            <option>Chief Operating Officer (COO)</option>
+                            <option>Chief Financial Officer (CFO)</option>
+                            <option>Chief Technology Officer (CTO)</option>
+                            <option>Chief Marketing Officer (CMO)</option>
+                            <option>Chief Information Officer (CIO)</option>
+                            <option>Chief Human Resources Officer (CHRO)</option>
+                            <option>Chief Product Officer (CPO)</option>
+                            <option>Chief Revenue Officer (CRO)</option>
+                            <option>Chief Data Officer (CDO)</option>
+                            <option>Chief Strategy Officer (CSO)</option>
+                            <option>Chief Compliance Officer (CCO)</option>
+                            <option>Chief Legal Officer (CLO)</option>
+                            <option>Chief Security Officer (CSO)</option>
+                            <option>President</option>
+                            <option>Vice President</option>
+                            <option>Senior Vice President</option>
+                            <option>Executive Vice President</option>
+                            <option>VP of Sales</option>
+                            <option>VP of Marketing</option>
+                            <option>VP of Engineering</option>
+                            <option>VP of Operations</option>
+                            <option>VP of Finance</option>
+                            <option>VP of Human Resources</option>
+                            <option>VP of Product</option>
+                            <option>VP of Business Development</option>
+                            <option>Director</option>
+                            <option>Senior Director</option>
+                            <option>Managing Director</option>
+                            <option>Executive Director</option>
+                            <option>Director of Sales</option>
+                            <option>Director of Marketing</option>
+                            <option>Director of Engineering</option>
+                            <option>Director of Operations</option>
+                            <option>Director of Finance</option>
+                            <option>Director of Human Resources</option>
+                            <option>Director of IT</option>
+                            <option>Director of Product Management</option>
+                            <option>Manager</option>
+                            <option>Senior Manager</option>
+                            <option>General Manager</option>
+                            <option>Project Manager</option>
+                            <option>Product Manager</option>
+                            <option>Sales Manager</option>
+                            <option>Marketing Manager</option>
+                            <option>Operations Manager</option>
+                            <option>HR Manager</option>
+                            <option>IT Manager</option>
+                            <option>Software Engineer</option>
+                            <option>Senior Software Engineer</option>
+                            <option>Full Stack Developer</option>
+                            <option>Frontend Developer</option>
+                            <option>Backend Developer</option>
+                            <option>DevOps Engineer</option>
+                            <option>Data Engineer</option>
+                            <option>Data Scientist</option>
+                            <option>QA Engineer</option>
+                            <option>Accountant</option>
+                            <option>Financial Analyst</option>
+                            <option>HR Specialist</option>
+                            <option>Recruiter</option>
+                            <option>Customer Service Representative</option>
+                            <option>Customer Support Specialist</option>
+                            <option>Founder</option>
+                            <option>Co-Founder</option>
+                            <option>Owner</option>
+                            <option>Freelancer</option>
+                            <option>Intern</option>
+                            <option>Student</option>
+                            <option>Other</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Email <span class="req">*</span></label>
+                        <div class="input-group">
+                            <input type="email" class="form-control" id="mr_email" name="irinn_mr_email" required>
+                            <button class="btn btn-primary" type="button" id="sendMrEmailOtpBtn">Send OTP</button>
+                        </div>
+                        <div class="input-group mt-2 d-none" id="mrEmailOtpWrap">
+                            <input type="text" class="form-control" id="mr_email_otp" placeholder="Enter OTP" maxlength="6">
+                            <button class="btn btn-success" type="button" id="verifyMrEmailOtpBtn">Verify</button>
+                        </div>
+                        <small id="mrEmailStatus" class="text-muted"></small>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Mobile <span class="req">*</span></label>
+                        <div class="input-group">
+                            <input type="tel" class="form-control" id="mr_mobile" name="irinn_mr_mobile" maxlength="10" required>
+                            <button class="btn btn-primary" type="button" id="sendMrMobileOtpBtn">Send OTP</button>
+                        </div>
+                        <div class="input-group mt-2 d-none" id="mrMobileOtpWrap">
+                            <input type="text" class="form-control" id="mr_mobile_otp" placeholder="Enter OTP" maxlength="6">
+                            <button class="btn btn-success" type="button" id="verifyMrMobileOtpBtn">Verify</button>
+                        </div>
+                        <small id="mrMobileStatus" class="text-muted"></small>
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-between mt-4">
+                    <button type="button" class="btn btn-secondary" id="backStep1Btn">Back</button>
+                    <button type="button" class="btn btn-primary" id="goStep3Btn">Next</button>
+                </div>
+            </div>
+
+            <div id="step3" class="flow-step">
+                <h5 class="mb-3">Step 3: Technical Person Details & Abuse Contact</h5>
+
+                <div class="border rounded p-3 mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="mb-0">Technical Person Details</h6>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" id="appSameAsMgmtBtn">Same as Management Details</button>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-3">
+                            <label class="form-label">Name <span class="req">*</span></label>
+                            <input type="text" class="form-control" id="app_name" name="irinn_tp_name" required>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Designation <span class="req">*</span></label>
+                            <select class="form-select" id="app_designation" name="irinn_tp_designation" required></select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Email <span class="req">*</span></label>
+                            <div class="input-group">
+                                <input type="email" class="form-control" id="app_email" name="irinn_tp_email" required>
+                                <button class="btn btn-primary" type="button" id="sendAppEmailOtpBtn">Send OTP</button>
+                            </div>
+                            <div class="input-group mt-2 d-none" id="appEmailOtpWrap">
+                                <input type="text" class="form-control" id="app_email_otp" maxlength="6" placeholder="Enter OTP">
+                                <button class="btn btn-success" type="button" id="verifyAppEmailOtpBtn">Verify</button>
+                            </div>
+                            <small id="appEmailStatus" class="text-muted"></small>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Mobile <span class="req">*</span></label>
+                            <div class="input-group">
+                                <input type="tel" class="form-control" id="app_mobile" name="irinn_tp_mobile" maxlength="10" required>
+                                <button class="btn btn-primary" type="button" id="sendAppMobileOtpBtn">Send OTP</button>
+                            </div>
+                            <div class="input-group mt-2 d-none" id="appMobileOtpWrap">
+                                <input type="text" class="form-control" id="app_mobile_otp" maxlength="6" placeholder="Enter OTP">
+                                <button class="btn btn-success" type="button" id="verifyAppMobileOtpBtn">Verify</button>
+                            </div>
+                            <small id="appMobileStatus" class="text-muted"></small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="border rounded p-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                        <h6 class="mb-0">Abuse Contact Details</h6>
+                        <div class="d-flex gap-2">
+                            <button type="button" class="btn btn-outline-secondary btn-sm" id="abuseSameAsMgmtBtn">Same as Management Details</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" id="abuseSameAsApplicantBtn">Same as Technical Person Details</button>
+                        </div>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-3">
+                            <label class="form-label">Name <span class="req">*</span></label>
+                            <input type="text" class="form-control" id="abuse_name" name="irinn_abuse_name" required>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Designation <span class="req">*</span></label>
+                            <select class="form-select" id="abuse_designation" name="irinn_abuse_designation" required></select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Email <span class="req">*</span></label>
+                            <div class="input-group">
+                                <input type="email" class="form-control" id="abuse_email" name="irinn_abuse_email" required>
+                                <button class="btn btn-primary" type="button" id="sendAbuseEmailOtpBtn">Send OTP</button>
+                            </div>
+                            <div class="input-group mt-2 d-none" id="abuseEmailOtpWrap">
+                                <input type="text" class="form-control" id="abuse_email_otp" maxlength="6" placeholder="Enter OTP">
+                                <button class="btn btn-success" type="button" id="verifyAbuseEmailOtpBtn">Verify</button>
+                            </div>
+                            <small id="abuseEmailStatus" class="text-muted"></small>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Mobile <span class="req">*</span></label>
+                            <div class="input-group">
+                                <input type="tel" class="form-control" id="abuse_mobile" name="irinn_abuse_mobile" maxlength="10" required>
+                                <button class="btn btn-primary" type="button" id="sendAbuseMobileOtpBtn">Send OTP</button>
+                            </div>
+                            <div class="input-group mt-2 d-none" id="abuseMobileOtpWrap">
+                                <input type="text" class="form-control" id="abuse_mobile_otp" maxlength="6" placeholder="Enter OTP">
+                                <button class="btn btn-success" type="button" id="verifyAbuseMobileOtpBtn">Verify</button>
+                            </div>
+                            <small id="abuseMobileStatus" class="text-muted"></small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-between mt-4">
+                    <button type="button" class="btn btn-secondary" id="backStep2Btn">Back</button>
+                    <button type="button" class="btn btn-primary" id="goStep4Btn">Next</button>
+                </div>
+            </div>
+
+            <div id="step4" class="flow-step">
+                <h5 class="mb-3">Step 4: Billing Representative Details</h5>
+
+                <div class="border rounded p-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                        <h6 class="mb-0">Billing Representative</h6>
+                        <div class="d-flex gap-2 flex-wrap">
+                            <button type="button" class="btn btn-outline-secondary btn-sm" id="brSameAsMgmtBtn">Same as Management Details</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" id="brSameAsApplicantBtn">Same as Technical Person Details</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" id="brSameAsAbuseBtn">Same as Abuse Contact</button>
+                        </div>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-3">
+                            <label class="form-label">Name <span class="req">*</span></label>
+                            <input type="text" class="form-control" id="br_name" name="irinn_br_name" required>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Designation <span class="req">*</span></label>
+                            <select class="form-select" id="br_designation" name="irinn_br_designation" required></select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Email <span class="req">*</span></label>
+                            <div class="input-group">
+                                <input type="email" class="form-control" id="br_email" name="irinn_br_email" required>
+                                <button class="btn btn-primary" type="button" id="sendBrEmailOtpBtn">Send OTP</button>
+                            </div>
+                            <div class="input-group mt-2 d-none" id="brEmailOtpWrap">
+                                <input type="text" class="form-control" id="br_email_otp" maxlength="6" placeholder="Enter OTP">
+                                <button class="btn btn-success" type="button" id="verifyBrEmailOtpBtn">Verify</button>
+                            </div>
+                            <small id="brEmailStatus" class="text-muted"></small>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Mobile <span class="req">*</span></label>
+                            <div class="input-group">
+                                <input type="tel" class="form-control" id="br_mobile" name="irinn_br_mobile" maxlength="10" required>
+                                <button class="btn btn-primary" type="button" id="sendBrMobileOtpBtn">Send OTP</button>
+                            </div>
+                            <div class="input-group mt-2 d-none" id="brMobileOtpWrap">
+                                <input type="text" class="form-control" id="br_mobile_otp" maxlength="6" placeholder="Enter OTP">
+                                <button class="btn btn-success" type="button" id="verifyBrMobileOtpBtn">Verify</button>
+                            </div>
+                            <small id="brMobileStatus" class="text-muted"></small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-between mt-4">
+                    <button type="button" class="btn btn-secondary" id="backStep3Btn">Back</button>
+                    <button type="button" class="btn btn-primary" id="goStep5Btn">Next</button>
+                </div>
+            </div>
+
+            <div id="step5" class="flow-step">
+                <h5 class="mb-3">Step 5: Network Resources</h5>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <div class="border rounded p-3 h-100">
+                            <h6>IPv4</h6>
+                            <div id="ipv4ResourceList" class="d-grid gap-2"></div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="border rounded p-3 h-100">
+                            <h6>IPv6</h6>
+                            <div id="ipv6ResourceList" class="d-grid gap-2"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="border rounded p-3 mt-3">
+                    <h6>Billing Calculation</h6>
+                    <div class="small text-muted">IPv4: 27,500 x 1.35^(log10(addresses) - 8)</div>
+                    <div class="small text-muted mb-2">IPv6: 24,199 x 1.35^(log10(addresses) - 22)</div>
+                    <div id="resourceBillingBreakup" class="small"></div>
+                    <div class="fw-bold mt-2">Final Billing Amount: <span id="finalBillingAmount">₹ 0.00</span></div>
+                </div>
+
+                <div class="form-check mt-3">
+                    <input class="form-check-input" type="checkbox" id="asn_required_check" name="irinn_asn_required" value="1">
+                    <label class="form-check-label" for="asn_required_check">Autonomous System Number (ASN) required</label>
+                </div>
+                <p class="small text-muted mb-0">Indicate whether you require an ASN. Upstream provider contact details are collected in the next step.</p>
+
+                <div class="d-flex justify-content-between mt-4">
+                    <button type="button" class="btn btn-secondary" id="backStep4Btn">Back</button>
+                    <button type="button" class="btn btn-primary" id="goStep6Btn">Next</button>
+                </div>
+            </div>
+
+            <div id="step6" class="flow-step">
+                <h5 class="mb-3">Step 6: Upstream Provider &amp; Authorized Signatory</h5>
+
+                <div class="border rounded p-3 mb-4">
+                    <h6 class="mb-2">Upstream Provider Details <span class="req">*</span></h6>
+                    <p class="small text-muted mb-3">Mandatory. Provide your upstream provider&rsquo;s contact for ASN / connectivity.</p>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Upstream Provider Name <span class="req">*</span></label>
+                            <input type="text" class="form-control" id="asn_name" name="irinn_upstream_provider_name" autocomplete="organization">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">AS Number <span class="req">*</span></label>
+                            <input type="text" class="form-control" id="asn_number" name="irinn_upstream_as_number" autocomplete="off">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Mobile <span class="req">*</span></label>
+                            <div class="input-group">
+                                <input type="tel" class="form-control" id="asn_mobile" name="irinn_upstream_mobile" maxlength="10" autocomplete="tel">
+                                <button class="btn btn-primary" type="button" id="sendAsnMobileOtpBtn">Send OTP</button>
+                            </div>
+                            <div class="input-group mt-2 d-none" id="asnMobileOtpWrap">
+                                <input type="text" class="form-control" id="asn_mobile_otp" maxlength="6" placeholder="Enter OTP">
+                                <button class="btn btn-success" type="button" id="verifyAsnMobileOtpBtn">Verify</button>
+                            </div>
+                            <small id="asnMobileStatus" class="text-muted"></small>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Email <span class="req">*</span></label>
+                            <div class="input-group">
+                                <input type="email" class="form-control" id="asn_email" name="irinn_upstream_email" autocomplete="email">
+                                <button class="btn btn-primary" type="button" id="sendAsnEmailOtpBtn">Send OTP</button>
+                            </div>
+                            <div class="input-group mt-2 d-none" id="asnEmailOtpWrap">
+                                <input type="text" class="form-control" id="asn_email_otp" maxlength="6" placeholder="Enter OTP">
+                                <button class="btn btn-success" type="button" id="verifyAsnEmailOtpBtn">Verify</button>
+                            </div>
+                            <small id="asnEmailStatus" class="text-muted"></small>
+                        </div>
+                    </div>
+                </div>
+
+                <h6 class="mb-3">Authorized Signatory Details</h6>
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Name (as per PAN) <span class="req">*</span></label>
+                        <input type="text" class="form-control" id="sign_name" name="irinn_sign_name" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Date of Birth <span class="req">*</span></label>
+                        <input type="date" class="form-control" id="sign_dob" name="irinn_sign_dob" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">PAN Number <span class="req">*</span></label>
+                        <input type="text" class="form-control" id="sign_pan" name="irinn_sign_pan" maxlength="10" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Email ID <span class="req">*</span></label>
+                        <div class="input-group">
+                            <input type="email" class="form-control" id="sign_email" name="irinn_sign_email" required>
+                            <button class="btn btn-primary" type="button" id="sendSignEmailOtpBtn">Send OTP</button>
+                        </div>
+                        <div class="input-group mt-2 d-none" id="signEmailOtpWrap">
+                            <input type="text" class="form-control" id="sign_email_otp" maxlength="6" placeholder="Enter OTP">
+                            <button class="btn btn-success" type="button" id="verifySignEmailOtpBtn">Verify</button>
+                        </div>
+                        <small id="signEmailStatus" class="text-muted"></small>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Mobile <span class="req">*</span></label>
+                        <div class="input-group">
+                            <input type="tel" class="form-control" id="sign_mobile" name="irinn_sign_mobile" maxlength="10" required>
+                            <button class="btn btn-primary" type="button" id="sendSignMobileOtpBtn">Send OTP</button>
+                        </div>
+                        <div class="input-group mt-2 d-none" id="signMobileOtpWrap">
+                            <input type="text" class="form-control" id="sign_mobile_otp" maxlength="6" placeholder="Enter OTP">
+                            <button class="btn btn-success" type="button" id="verifySignMobileOtpBtn">Verify</button>
+                        </div>
+                        <small id="signMobileStatus" class="text-muted"></small>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Signature Proof Document <span class="req">*</span></label>
+                        @include('user.applications.irin.partials.resubmit-doc-hint', ['docColumn' => 'irinn_signature_proof_path'])
+                        <input type="file" class="form-control" id="signature_proof_file" name="irinn_signature_proof" accept=".pdf,.jpg,.jpeg,.png,.webp" @if(empty($isNormalizedResubmission)) required @endif>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Board Resolution Document <span class="req">*</span></label>
+                        @include('user.applications.irin.partials.resubmit-doc-hint', ['docColumn' => 'irinn_board_resolution_path'])
+                        <input type="file" class="form-control" id="board_resolution_file_step6" name="irinn_board_resolution" accept=".pdf,.jpg,.jpeg,.png,.webp" @if(empty($isNormalizedResubmission)) required @endif>
+                    </div>
+                </div>
+                <div class="d-flex justify-content-between mt-4">
+                    <button type="button" class="btn btn-secondary" id="backStep5Btn">Back</button>
+                    <button type="button" class="btn btn-primary" id="goStep7Btn">Next</button>
+                </div>
+            </div>
+
+            <div id="step7" class="flow-step">
+                <h5 class="mb-3">Step 7: KYC Documents</h5>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Network Diagram <span class="req">*</span></label>
+                        @include('user.applications.irin.partials.resubmit-doc-hint', ['docColumn' => 'irinn_kyc_network_diagram_path'])
+                        <input type="file" class="form-control" id="kyc_network_diagram_file" name="irinn_kyc_network_diagram" accept=".pdf,.jpg,.jpeg,.png,.webp" @if(empty($isNormalizedResubmission)) required @endif>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Equipment Invoices <span class="req">*</span></label>
+                        @include('user.applications.irin.partials.resubmit-doc-hint', ['docColumn' => 'irinn_kyc_equipment_invoice_path'])
+                        <input type="file" class="form-control" id="kyc_equipment_invoice_file" name="irinn_kyc_equipment_invoice" accept=".pdf,.jpg,.jpeg,.png,.webp" @if(empty($isNormalizedResubmission)) required @endif>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Bandwidth Proof <span class="req">*</span></label>
+                        @include('user.applications.irin.partials.resubmit-doc-hint', ['docColumn' => 'irinn_kyc_bandwidth_proof_path'])
+                        <input type="file" class="form-control" id="kyc_bandwidth_proof_file" name="irinn_kyc_bandwidth_proof" accept=".pdf,.jpg,.jpeg,.png,.webp" @if(empty($isNormalizedResubmission)) required @endif>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">IRINN Agreement Copy <span class="req">*</span></label>
+                        <small class="text-muted d-block mb-1">Use the Standard IRINN Affiliation Agreement template (download below). Sign, stamp, add witness details, then upload.</small>
+                        @include('user.applications.irin.partials.resubmit-doc-hint', ['docColumn' => 'irinn_kyc_irinn_agreement_path'])
+                        <input type="file" class="form-control" id="kyc_irinn_agreement_copy_file" name="irinn_kyc_irinn_agreement" accept=".pdf,.jpg,.jpeg,.png,.webp" @if(empty($isNormalizedResubmission)) required @endif>
+                    </div>
+                </div>
+
+                @if(!empty($isNormalizedResubmission) && isset($application))
+                    @php
+                        $otherDocRows = [];
+                        for ($oi = 1; $oi <= 5; $oi++) {
+                            $op = $application->{"irinn_other_doc_{$oi}_path"};
+                            if (filled($op)) {
+                                $otherDocRows[] = [
+                                    'slot' => $oi,
+                                    'label' => $application->{"irinn_other_doc_{$oi}_label"},
+                                    'pathColumn' => "irinn_other_doc_{$oi}_path",
+                                ];
+                            }
+                        }
+                    @endphp
+                    @if(count($otherDocRows) > 0)
+                        <div class="border rounded p-3 mt-3 bg-light">
+                            <h6 class="mb-2 small fw-semibold text-uppercase text-muted">Optional documents you added before</h6>
+                            <p class="small text-muted mb-2">These stay on your application unless you add replacements in &ldquo;Other documents&rdquo; below.</p>
+                            <ul class="small mb-0 ps-3">
+                                @foreach($otherDocRows as $row)
+                                    <li class="mb-1">
+                                        @if(filled($row['label']))
+                                            <span class="fw-medium">{{ $row['label'] }}</span>
+                                        @else
+                                            <span class="fw-medium">Additional document {{ $row['slot'] }}</span>
+                                        @endif
+                                        &mdash;
+                                        <a href="{{ route('user.applications.document', ['id' => $application->id, 'doc' => $row['pathColumn']]) }}" target="_blank" rel="noopener noreferrer">View current file</a>
+                                    </li>
+                                @endforeach
+                            </ul>
+                        </div>
+                    @endif
                 @endif
 
-                <div class="btn-action-group">
-                    <button type="button" class="btn btn-secondary" onclick="previousStep()">Previous</button>
-                    <div>
-                        @if(!$isResubmission)
-                        <button type="button" class="btn btn-info" id="previewBtn">Preview</button>
-                        @php
-                            $userForm = \App\Models\Registration::find(session('user_id'));
-                            $wallet = $userForm ? $userForm->wallet : null;
-                            $walletBalance = $wallet && $wallet->status === 'active' ? (float) $wallet->balance : 0;
-                            $canPayWithWallet = $wallet && $wallet->status === 'active' && $walletBalance >= 1180.00;
-                        @endphp
-                        @if($canPayWithWallet)
-                            <div class="form-check mt-2">
-                                <input class="form-check-input" type="checkbox" id="useWalletPayment" name="use_wallet_payment">
-                                <label class="form-check-label" for="useWalletPayment">
-                                    Pay with Advance Amount (Balance: ₹{{ number_format($walletBalance, 2) }})
-                                </label>
-                            </div>
-                        @endif
-                        <button type="submit" class="btn btn-success" id="submitBtn">Final Submit</button>
-                        @else
-                        <button type="submit" class="btn btn-success" id="submitBtn">Resubmit Application</button>
-                        @endif
-                    </div>
+                <div class="mt-3">
+                    <a href="{{ route('user.applications.irin.download-agreement') }}" class="btn btn-outline-primary" target="_blank">
+                        Download Standard IRINN Agreement (prefilled)
+                    </a>
+                </div>
+
+                <div class="border rounded p-3 mt-4">
+                    <h6 class="mb-1">Other documents <span class="text-muted fw-normal">(optional)</span></h6>
+                    <p class="small text-muted mb-3">Add up to 5 extra supporting files if needed (e.g. letters, certificates, clarifications).</p>
+                    <div id="kycOtherDocumentsList"></div>
+                    <button type="button" class="btn btn-outline-primary btn-sm" id="addKycOtherDocumentBtn">
+                        <i class="bi bi-plus-lg"></i> Add other document
+                    </button>
+                    <small class="text-muted ms-2" id="kycOtherDocumentsCountHint"></small>
+                </div>
+
+                <div class="d-flex justify-content-between mt-4">
+                    <button type="button" class="btn btn-secondary" id="backStep6Btn">Back</button>
+                    <button type="button" class="btn btn-success" id="submitIrinApplicationBtn">Submit application</button>
                 </div>
             </div>
         </form>
     </div>
 </div>
+@endsection
 
 @push('scripts')
 <script>
-// Resubmission prefill (for IP selects after options load)
-window.irinnIsResubmission = @json($isResubmission ?? false);
-window.irinnResubmissionPrefill = @json($prefill ?? []);
-
-// Global pricing data
-let ipPricingData = {
-    ipv4: {},
-    ipv6: {}
+const cinTypes = ['private_limited', 'public_limited', 'llp', 'opc', 'psu'];
+const udyamTypes = ['partnership', 'proprietor'];
+const docTypes = ['government', 'ngo', 'academia_institute', 'trust'];
+let isCinFlow = false;
+let mcaRepresentativeList = [];
+const verifiedEmails = new Set();
+const verifiedMobiles = new Set();
+const verificationState = {
+    mr: { email: false, mobile: false },
+    app: { email: false, mobile: false },
+    abuse: { email: false, mobile: false },
+    br: { email: false, mobile: false },
+    asn: { email: false, mobile: false },
+    sign: { email: false, mobile: false }
 };
+const IRINN_RESUBMIT_MODE = @json(!empty($isNormalizedResubmission));
+const IRINN_PREFILL = @json($irinnNormalizedPrefill ?? []);
+if (IRINN_RESUBMIT_MODE) {
+    ['mr', 'app', 'abuse', 'br', 'asn', 'sign'].forEach((k) => {
+        verificationState[k] = { email: true, mobile: true };
+    });
+}
+let maxUnlockedStep = 7;
+let selectedIPv4Resource = null;
+let selectedIPv6Resource = null;
+let resourcePool = { ipv4: [], ipv6: [] };
+let fullMrDesignationOptionsHtml = '';
+const KYC_OTHER_DOCUMENT_MAX = 5;
+let kycOtherDocSlotCount = 0;
 
-let currentStep = 1;
-const totalSteps = 5;
-const visitedSteps = new Set([1]);
+function updateKycOtherDocUi() {
+    const btn = document.getElementById('addKycOtherDocumentBtn');
+    const hint = document.getElementById('kycOtherDocumentsCountHint');
+    if (!btn || !hint) {
+        return;
+    }
+    const remaining = KYC_OTHER_DOCUMENT_MAX - kycOtherDocSlotCount;
+    btn.disabled = kycOtherDocSlotCount >= KYC_OTHER_DOCUMENT_MAX;
+    hint.textContent = kycOtherDocSlotCount > 0
+        ? `${kycOtherDocSlotCount} of ${KYC_OTHER_DOCUMENT_MAX} added${remaining > 0 ? ` — ${remaining} remaining` : ''}`
+        : `Up to ${KYC_OTHER_DOCUMENT_MAX} additional files.`;
+}
 
-// Fetch pricing from API
-async function fetchIpPricing() {
-    try {
-        const response = await fetch('{{ route("user.applications.irin.pricing") }}');
-        const result = await response.json();
-        if (result.success && result.data) {
-            const d = result.data;
-            ipPricingData = {
-                ipv4: d.ipv4 || d.IPv4 || {},
-                ipv6: d.ipv6 || d.IPv6 || {}
-            };
-            populateIpOptions();
-        }
-    } catch (error) {
-        console.error('Error fetching IP pricing:', error);
+function appendKycOtherDocumentRow() {
+    if (kycOtherDocSlotCount >= KYC_OTHER_DOCUMENT_MAX) {
+        return;
+    }
+    const list = document.getElementById('kycOtherDocumentsList');
+    if (!list) {
+        return;
+    }
+    const row = document.createElement('div');
+    row.className = 'row g-2 align-items-end mb-3 kyc-other-doc-row';
+    row.innerHTML = `
+        <div class="col-md-5 col-12">
+            <label class="form-label small text-muted mb-1">Document title (optional)</label>
+            <input type="text" class="form-control form-control-sm" name="kyc_other_document_label[]" placeholder="e.g. NOC, supplementary certificate">
+        </div>
+        <div class="col-md-6 col-12">
+            <label class="form-label small mb-1">File</label>
+            <input type="file" class="form-control form-control-sm" name="kyc_other_document_file[]" accept=".pdf,.jpg,.jpeg,.png,.webp">
+        </div>
+        <div class="col-md-auto col-12 d-flex align-items-end pb-1">
+            <button type="button" class="btn btn-outline-danger btn-sm remove-kyc-other-doc" title="Remove this row">Remove</button>
+        </div>
+    `;
+    list.appendChild(row);
+    kycOtherDocSlotCount++;
+    updateKycOtherDocUi();
+}
+
+function getSectionValues(prefix) {
+    return {
+        name: document.getElementById(prefix + '_name')?.value || '',
+        designation: document.getElementById(prefix + '_designation')?.value || '',
+        email: document.getElementById(prefix + '_email')?.value || '',
+        mobile: document.getElementById(prefix + '_mobile')?.value || ''
+    };
+}
+
+function setSectionValues(prefix, values, makeReadonly = false) {
+    const name = document.getElementById(prefix + '_name');
+    const designation = document.getElementById(prefix + '_designation');
+    const email = document.getElementById(prefix + '_email');
+    const mobile = document.getElementById(prefix + '_mobile');
+    if (name) {
+        name.value = values.name || '';
+        name.readOnly = makeReadonly;
+        name.classList.toggle('readonly-like', makeReadonly);
+    }
+    if (designation) {
+        designation.value = values.designation || '';
+        designation.disabled = makeReadonly;
+        designation.classList.toggle('readonly-like', makeReadonly);
+    }
+    if (email) {
+        email.value = values.email || '';
+        email.readOnly = makeReadonly;
+        email.classList.toggle('readonly-like', makeReadonly);
+    }
+    if (mobile) {
+        mobile.value = values.mobile || '';
+        mobile.readOnly = makeReadonly;
+        mobile.classList.toggle('readonly-like', makeReadonly);
     }
 }
 
-// Populate IP options dynamically from backend data
-function populateIpOptions() {
-    // Populate IPv4 options
-    const ipv4Select = document.getElementById('ipv4_prefix');
-    if (ipv4Select && ipPricingData.ipv4) {
-        ipv4Select.innerHTML = '<option value="">Select IPv4 prefix</option>';
-        const ipv4Sizes = Object.keys(ipPricingData.ipv4).sort();
-        
-        ipv4Sizes.forEach((size) => {
-            const pricing = ipPricingData.ipv4[size];
-            const option = document.createElement('option');
-            option.value = size;
-            option.textContent = `${size} - ₹${pricing.price.toLocaleString('en-IN', {maximumFractionDigits: 2})}`;
-            option.setAttribute('data-price', pricing.price);
-            option.setAttribute('data-amount', pricing.amount || 0);
-            option.setAttribute('data-gst-percentage', pricing.gst_percentage || 0);
-            option.setAttribute('data-igst', pricing.igst || 0);
-            option.setAttribute('data-cgst', pricing.cgst || 0);
-            option.setAttribute('data-sgst', pricing.sgst || 0);
-            ipv4Select.appendChild(option);
-        });
-    }
-
-    // Populate IPv6 options
-    const ipv6Select = document.getElementById('ipv6_prefix');
-    if (ipv6Select && ipPricingData.ipv6) {
-        ipv6Select.innerHTML = '<option value="">Select IPv6 prefix</option>';
-        const ipv6Sizes = Object.keys(ipPricingData.ipv6).sort();
-        
-        ipv6Sizes.forEach((size) => {
-            const pricing = ipPricingData.ipv6[size];
-            const option = document.createElement('option');
-            option.value = size;
-            option.textContent = `${size} - ₹${pricing.price.toLocaleString('en-IN', {maximumFractionDigits: 2})}`;
-            option.setAttribute('data-price', pricing.price);
-            option.setAttribute('data-amount', pricing.amount || 0);
-            option.setAttribute('data-gst-percentage', pricing.gst_percentage || 0);
-            option.setAttribute('data-igst', pricing.igst || 0);
-            option.setAttribute('data-cgst', pricing.cgst || 0);
-            option.setAttribute('data-sgst', pricing.sgst || 0);
-            ipv6Select.appendChild(option);
-        });
-    }
-
-    // Helper: set select value; try exact, then with/without leading slash (e.g. /24 vs 24)
-    function setSelectValue(select, value) {
-        if (!select || !value) return;
-        value = String(value).trim();
-        select.value = value;
-        if (select.value === value) return;
-        const withSlash = value.startsWith('/') ? value : '/' + value;
-        const withoutSlash = value.replace(/^\//, '');
-        select.value = withSlash;
-        if (select.value !== withSlash) select.value = withoutSlash;
-    }
-
-    // If coming back from preview or resubmission, re-apply select values after options are populated
-    try {
-        const urlParams = new URLSearchParams(window.location.search);
-        const fromPreview = urlParams.get('from_preview');
-        if (fromPreview === '1') {
-            const stored = sessionStorage.getItem('irin_form_data');
-            if (stored) {
-                const data = JSON.parse(stored);
-                if (ipv4Select && data.ipv4_prefix) setSelectValue(ipv4Select, data.ipv4_prefix);
-                if (ipv6Select && data.ipv6_prefix) setSelectValue(ipv6Select, data.ipv6_prefix);
-                if (document.getElementById('asn_required') && data.asn_required) document.getElementById('asn_required').value = data.asn_required;
-                updatePricing();
-            }
-        }
-        if (window.irinnIsResubmission && window.irinnResubmissionPrefill) {
-            const p = window.irinnResubmissionPrefill;
-            if (ipv4Select && p.ipv4_prefix) setSelectValue(ipv4Select, p.ipv4_prefix);
-            if (ipv6Select && p.ipv6_prefix) setSelectValue(ipv6Select, p.ipv6_prefix);
-            if (typeof updatePricing === 'function') updatePricing();
-        }
-    } catch (e) {
-        // ignore restore errors
-    }
+function cloneDesignationOptions(optionsHtml, targetIds) {
+    if (!optionsHtml) return;
+    targetIds.forEach((id) => {
+        const target = document.getElementById(id);
+        if (target) target.innerHTML = optionsHtml;
+    });
 }
 
-// Re-apply resubmission prefill to IP dropdowns after a short delay (in case options load async)
-function applyResubmissionPrefillToSelects() {
-    if (!window.irinnIsResubmission || !window.irinnResubmissionPrefill) return;
-    const p = window.irinnResubmissionPrefill;
-    const ipv4Select = document.getElementById('ipv4_prefix');
-    const ipv6Select = document.getElementById('ipv6_prefix');
-    function setVal(select, value) {
-        if (!select || !value) return;
-        value = String(value).trim();
-        select.value = value;
-        if (select.value !== value) {
-            const alt = value.startsWith('/') ? value.replace(/^\//, '') : '/' + value;
-            select.value = alt;
-        }
-    }
-    if (ipv4Select && p.ipv4_prefix) setVal(ipv4Select, p.ipv4_prefix);
-    if (ipv6Select && p.ipv6_prefix) setVal(ipv6Select, p.ipv6_prefix);
-    if (typeof updatePricing === 'function') updatePricing();
+function getManagementRepresentativeName() {
+    return (document.getElementById('mr_name').value || '').trim();
 }
 
-// Update pricing display
-function updatePricing() {
-    const ipv4Select = document.getElementById('ipv4_prefix');
-    const ipv6Select = document.getElementById('ipv6_prefix');
-    const pricingDisplay = document.getElementById('pricingDisplay');
-    
-    const selectedPricings = [];
-    
-    // Get IPv4 pricing
-    if (ipv4Select && ipv4Select.value) {
-        const selectedOption = ipv4Select.options[ipv4Select.selectedIndex];
-        const amount = parseFloat(selectedOption.getAttribute('data-amount')) || 0;
-        const igst = parseFloat(selectedOption.getAttribute('data-igst')) || 0;
-        const cgst = parseFloat(selectedOption.getAttribute('data-cgst')) || 0;
-        const sgst = parseFloat(selectedOption.getAttribute('data-sgst')) || 0;
-        const gstTotal = igst + cgst + sgst;
-        const price = parseFloat(selectedOption.getAttribute('data-price')) || 0;
-        if (amount > 0 || price > 0) {
-            selectedPricings.push({ 
-                amount: amount || (price - gstTotal), 
-                gst: gstTotal,
-                price: price 
-            });
+function syncManagementRepresentativeUi(prevIsCinFlow) {
+    const repWrap = document.getElementById('repSelectWrap');
+    const desig = document.getElementById('mr_designation');
+    const mrName = document.getElementById('mr_name');
+    const repSelect = document.getElementById('management_rep_select');
+    const dinHidden = document.getElementById('mr_director_din');
+
+    if (isCinFlow) {
+        repWrap.style.display = '';
+        desig.innerHTML = '<option value="Director" selected>Director</option>';
+        desig.disabled = true;
+        desig.classList.add('readonly-like');
+        if (!prevIsCinFlow) {
+            repSelect.innerHTML = '<option value="">Select director</option>';
+            mcaRepresentativeList = [];
+            mrName.value = '';
+            dinHidden.value = '';
+            mrName.readOnly = false;
+            mrName.classList.remove('readonly-like');
         }
-    }
-    
-    // Get IPv6 pricing
-    if (ipv6Select && ipv6Select.value) {
-        const selectedOption = ipv6Select.options[ipv6Select.selectedIndex];
-        const amount = parseFloat(selectedOption.getAttribute('data-amount')) || 0;
-        const igst = parseFloat(selectedOption.getAttribute('data-igst')) || 0;
-        const cgst = parseFloat(selectedOption.getAttribute('data-cgst')) || 0;
-        const sgst = parseFloat(selectedOption.getAttribute('data-sgst')) || 0;
-        const gstTotal = igst + cgst + sgst;
-        const price = parseFloat(selectedOption.getAttribute('data-price')) || 0;
-        if (amount > 0 || price > 0) {
-            selectedPricings.push({ 
-                amount: amount || (price - gstTotal), 
-                gst: gstTotal,
-                price: price 
-            });
-        }
-    }
-    
-    if (selectedPricings.length > 0) {
-        // Find the pricing with maximum total (base amount + GST)
-        const maxPricing = selectedPricings.reduce((max, p) => {
-            return (p.price > max.price) ? p : max;
-        });
-        
-        const baseAmount = maxPricing.amount;
-        const gstAmount = maxPricing.gst;
-        const totalAmount = maxPricing.price;
-        
-        // Update display
-        document.getElementById('max_ip_fee').textContent = '₹ ' + baseAmount.toLocaleString('en-IN', {maximumFractionDigits: 2});
-        document.getElementById('gst_amount').textContent = '₹ ' + gstAmount.toLocaleString('en-IN', {maximumFractionDigits: 2});
-        document.getElementById('total_fee').textContent = '₹ ' + totalAmount.toLocaleString('en-IN', {maximumFractionDigits: 2});
-        
-        // Show GST row if GST exists
-        if (gstAmount > 0) {
-            document.getElementById('gst_row').style.display = 'flex';
-        } else {
-            document.getElementById('gst_row').style.display = 'none';
-        }
-        
-        pricingDisplay.style.display = 'block';
     } else {
-        pricingDisplay.style.display = 'none';
+        repWrap.style.display = 'none';
+        repSelect.innerHTML = '<option value="">Select director</option>';
+        mcaRepresentativeList = [];
+        desig.disabled = false;
+        desig.classList.remove('readonly-like');
+        desig.innerHTML = fullMrDesignationOptionsHtml;
+        mrName.readOnly = false;
+        mrName.classList.remove('readonly-like');
+        mrName.value = '';
+        dinHidden.value = '';
     }
 }
 
-// Step navigation
-function showStep(step) {
-    visitedSteps.add(step);
-    currentStep = step;
+function irinnOtpButtonPrefix(prefix) {
+    const map = { mr: 'Mr', app: 'App', abuse: 'Abuse', br: 'Br', asn: 'Asn', sign: 'Sign' };
+    return map[prefix] || (prefix.charAt(0).toUpperCase() + prefix.slice(1));
+}
 
-    document.querySelectorAll('.form-step').forEach(s => {
-        s.classList.remove('active');
-        s.style.display = 'none';
-    });
-
-    const stepElement = document.getElementById('step' + step);
-    if (stepElement) {
-        stepElement.classList.add('active');
-        stepElement.style.display = 'block';
+function applyIrinnEmailVerifiedUi(fieldPrefix) {
+    const emailInput = document.getElementById(fieldPrefix + '_email');
+    const sendBtn = document.getElementById('send' + irinnOtpButtonPrefix(fieldPrefix) + 'EmailOtpBtn');
+    const wrap = document.getElementById(fieldPrefix + 'EmailOtpWrap');
+    const otpInput = document.getElementById(fieldPrefix + '_email_otp');
+    const status = document.getElementById(fieldPrefix + 'EmailStatus');
+    if (emailInput) {
+        emailInput.readOnly = true;
+        emailInput.classList.add('readonly-like');
     }
+    if (sendBtn) sendBtn.classList.add('d-none');
+    if (wrap) wrap.classList.add('d-none');
+    if (otpInput) otpInput.value = '';
+    if (status) status.textContent = 'Verified.';
+    if (status) status.classList.remove('text-danger');
+    if (status) status.classList.add('text-success');
+}
 
-    document.querySelectorAll('.step-item').forEach((item, index) => {
-        const stepNum = index + 1;
-        item.classList.remove('active', 'visited');
-        if (stepNum === step) {
-            item.classList.add('active', 'visited');
-        } else if (visitedSteps.has(stepNum)) {
-            item.classList.add('visited');
-        }
-    });
-
-    const formContainer = document.querySelector('.irinn-form-container');
-    if (formContainer) {
-        formContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+function resetIrinnEmailOtpUi(fieldPrefix) {
+    const emailInput = document.getElementById(fieldPrefix + '_email');
+    const sendBtn = document.getElementById('send' + irinnOtpButtonPrefix(fieldPrefix) + 'EmailOtpBtn');
+    const wrap = document.getElementById(fieldPrefix + 'EmailOtpWrap');
+    const otpInput = document.getElementById(fieldPrefix + '_email_otp');
+    const status = document.getElementById(fieldPrefix + 'EmailStatus');
+    if (emailInput) {
+        emailInput.readOnly = false;
+        emailInput.classList.remove('readonly-like');
+    }
+    if (sendBtn) sendBtn.classList.remove('d-none');
+    if (wrap) wrap.classList.add('d-none');
+    if (otpInput) otpInput.value = '';
+    if (status) {
+        status.textContent = '';
+        status.classList.remove('text-success', 'text-danger');
     }
 }
 
-function clearIpStep2Validity() {
-    const ipv4 = document.getElementById('ipv4_prefix');
-    const ipv6 = document.getElementById('ipv6_prefix');
-    if (ipv4) ipv4.setCustomValidity('');
-    if (ipv6) ipv6.setCustomValidity('');
+function applyIrinnMobileVerifiedUi(fieldPrefix) {
+    const mobileInput = document.getElementById(fieldPrefix + '_mobile');
+    const sendBtn = document.getElementById('send' + irinnOtpButtonPrefix(fieldPrefix) + 'MobileOtpBtn');
+    const wrap = document.getElementById(fieldPrefix + 'MobileOtpWrap');
+    const otpInput = document.getElementById(fieldPrefix + '_mobile_otp');
+    const status = document.getElementById(fieldPrefix + 'MobileStatus');
+    if (mobileInput) {
+        mobileInput.readOnly = true;
+        mobileInput.classList.add('readonly-like');
+    }
+    if (sendBtn) sendBtn.classList.add('d-none');
+    if (wrap) wrap.classList.add('d-none');
+    if (otpInput) otpInput.value = '';
+    if (status) status.textContent = 'Verified.';
+    if (status) status.classList.remove('text-danger');
+    if (status) status.classList.add('text-success');
 }
 
-function nextStep() {
-    // Validate only current step fields
-    const currentStepElement = document.getElementById('step' + currentStep);
-    if (currentStepElement) {
-        let isValid = true;
-        let firstInvalidField = null;
+function resetIrinnMobileOtpUi(fieldPrefix) {
+    const mobileInput = document.getElementById(fieldPrefix + '_mobile');
+    const sendBtn = document.getElementById('send' + irinnOtpButtonPrefix(fieldPrefix) + 'MobileOtpBtn');
+    const wrap = document.getElementById(fieldPrefix + 'MobileOtpWrap');
+    const otpInput = document.getElementById(fieldPrefix + '_mobile_otp');
+    const status = document.getElementById(fieldPrefix + 'MobileStatus');
+    if (mobileInput) {
+        mobileInput.readOnly = false;
+        mobileInput.classList.remove('readonly-like');
+    }
+    if (sendBtn) sendBtn.classList.remove('d-none');
+    if (wrap) wrap.classList.add('d-none');
+    if (otpInput) otpInput.value = '';
+    if (status) {
+        status.textContent = '';
+        status.classList.remove('text-success', 'text-danger');
+    }
+}
 
-        // Step 2: at least one of IPv4 or IPv6 is required
-        if (currentStep === 2) {
-            const ipv4Select = document.getElementById('ipv4_prefix');
-            const ipv6Select = document.getElementById('ipv6_prefix');
-            const ipv4Val = ipv4Select ? ipv4Select.value : '';
-            const ipv6Val = ipv6Select ? ipv6Select.value : '';
-            if (!ipv4Val && !ipv6Val) {
-                isValid = false;
-                const msg = 'Please select at least one: IPv4 or IPv6 prefix.';
-                if (ipv4Select) {
-                    ipv4Select.setCustomValidity(msg);
-                    firstInvalidField = ipv4Select;
-                }
+function wireOtp(sectionKey, fieldPrefix) {
+    const emailInput = document.getElementById(fieldPrefix + '_email');
+    const mobileInput = document.getElementById(fieldPrefix + '_mobile');
+    const p = irinnOtpButtonPrefix(fieldPrefix);
+    const sendEmailBtn = document.getElementById('send' + p + 'EmailOtpBtn');
+    const verifyEmailBtn = document.getElementById('verify' + p + 'EmailOtpBtn');
+    const sendMobileBtn = document.getElementById('send' + p + 'MobileOtpBtn');
+    const verifyMobileBtn = document.getElementById('verify' + p + 'MobileOtpBtn');
+    const emailOtpWrap = document.getElementById(fieldPrefix + 'EmailOtpWrap');
+    const mobileOtpWrap = document.getElementById(fieldPrefix + 'MobileOtpWrap');
+    const emailOtpInput = document.getElementById(fieldPrefix + '_email_otp');
+    const mobileOtpInput = document.getElementById(fieldPrefix + '_mobile_otp');
+    const emailStatus = document.getElementById(fieldPrefix + 'EmailStatus');
+    const mobileStatus = document.getElementById(fieldPrefix + 'MobileStatus');
+
+    if (emailInput) {
+        emailInput.addEventListener('input', () => {
+            verificationState[sectionKey].email = false;
+            resetIrinnEmailOtpUi(fieldPrefix);
+        });
+    }
+    if (mobileInput) {
+        mobileInput.addEventListener('input', () => {
+            verificationState[sectionKey].mobile = false;
+            resetIrinnMobileOtpUi(fieldPrefix);
+        });
+    }
+
+    if (sendEmailBtn) {
+        sendEmailBtn.addEventListener('click', async () => {
+            const email = (emailInput.value || '').trim().toLowerCase();
+            if (!email) { alert('Enter email first.'); return; }
+            if (verifiedEmails.has(email)) {
+                verificationState[sectionKey].email = true;
+                applyIrinnEmailVerifiedUi(fieldPrefix);
+                emailStatus.textContent = 'Already verified for this address.';
+                return;
+            }
+            emailStatus.classList.remove('text-success', 'text-danger');
+            const res = await fetch('{{ route("user.applications.irin.flow.send-email-otp") }}', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}', 'Accept': 'application/json' },
+                body: JSON.stringify({ email })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (data.success) {
+                emailOtpWrap?.classList.remove('d-none');
+                emailStatus.textContent = 'OTP sent to your email. Enter it below.';
+                emailStatus.classList.add('text-success');
             } else {
-                clearIpStep2Validity();
-            }
-        }
-
-        // Get all required fields in current step
-        const requiredFields = currentStepElement.querySelectorAll('input[required]:not([type="file"]):not([type="checkbox"]), select[required], textarea[required]');
-        
-        requiredFields.forEach(field => {
-            // Skip hidden fields and file inputs (validate those on submit only)
-            if (field.type === 'hidden' || field.type === 'file' || field.style.display === 'none' || field.closest('[style*="display: none"]')) {
-                return;
-            }
-            
-            // Special handling for radio buttons
-            if (field.type === 'radio') {
-                const radioGroup = currentStepElement.querySelectorAll(`input[name="${field.name}"]`);
-                const isRadioValid = Array.from(radioGroup).some(radio => radio.checked);
-                if (!isRadioValid) {
-                    isValid = false;
-                    if (!firstInvalidField) {
-                        firstInvalidField = field;
-                    }
-                }
-                return;
-            }
-            
-            // Check if field is valid
-            if (!field.checkValidity()) {
-                isValid = false;
-                if (!firstInvalidField) {
-                    firstInvalidField = field;
-                }
+                emailStatus.textContent = data.message || 'Failed to send OTP.';
+                emailStatus.classList.add('text-danger');
             }
         });
-        
-        if (!isValid) {
-            // Focus on first invalid field and show validation message
-            if (firstInvalidField) {
-                firstInvalidField.focus();
-                firstInvalidField.reportValidity();
+    }
+
+    if (verifyEmailBtn) {
+        verifyEmailBtn.addEventListener('click', async () => {
+            const email = (emailInput.value || '').trim().toLowerCase();
+            const otp = (emailOtpInput?.value || '').trim();
+            if (otp.length !== 6) { alert('Enter the 6-digit OTP.'); return; }
+            const res = await fetch('{{ route("user.applications.irin.flow.verify-email-otp") }}', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}', 'Accept': 'application/json' },
+                body: JSON.stringify({ email, otp })
+            });
+            const data = await res.json().catch(() => ({}));
+            verificationState[sectionKey].email = !!data.success;
+            if (data.success) {
+                verifiedEmails.add(email);
+                applyIrinnEmailVerifiedUi(fieldPrefix);
+            } else {
+                emailStatus.textContent = data.message || 'Verification failed.';
+                emailStatus.classList.remove('text-success');
+                emailStatus.classList.add('text-danger');
             }
+        });
+    }
+
+    if (sendMobileBtn) {
+        sendMobileBtn.addEventListener('click', async () => {
+            const mobile = (mobileInput.value || '').trim().replace(/\D/g, '').slice(0, 10);
+            if (mobile.length !== 10) { alert('Enter valid 10-digit mobile.'); return; }
+            if (verifiedMobiles.has(mobile)) {
+                verificationState[sectionKey].mobile = true;
+                applyIrinnMobileVerifiedUi(fieldPrefix);
+                mobileStatus.textContent = 'Already verified for this number.';
+                return;
+            }
+            mobileStatus.classList.remove('text-success', 'text-danger');
+            const res = await fetch('{{ route("user.applications.irin.flow.send-mobile-otp") }}', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}', 'Accept': 'application/json' },
+                body: JSON.stringify({ mobile })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (data.success) {
+                mobileOtpWrap?.classList.remove('d-none');
+                const shown = data.otp ? (' (dev only) OTP: ' + data.otp) : '';
+                mobileStatus.textContent = (data.message || 'Enter the OTP sent to your mobile.') + shown;
+                mobileStatus.classList.add('text-success');
+            } else {
+                mobileStatus.textContent = data.message || 'Failed to generate OTP.';
+                mobileStatus.classList.add('text-danger');
+            }
+        });
+    }
+
+    if (verifyMobileBtn) {
+        verifyMobileBtn.addEventListener('click', async () => {
+            const mobile = (mobileInput.value || '').trim().replace(/\D/g, '').slice(0, 10);
+            const otp = (mobileOtpInput?.value || '').trim();
+            if (otp.length !== 6) { alert('Enter the 6-digit OTP.'); return; }
+            const res = await fetch('{{ route("user.applications.irin.flow.verify-mobile-otp") }}', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}', 'Accept': 'application/json' },
+                body: JSON.stringify({ mobile, otp })
+            });
+            const data = await res.json().catch(() => ({}));
+            verificationState[sectionKey].mobile = !!data.success;
+            if (data.success) {
+                verifiedMobiles.add(mobile);
+                applyIrinnMobileVerifiedUi(fieldPrefix);
+            } else {
+                mobileStatus.textContent = data.message || 'Verification failed.';
+                mobileStatus.classList.remove('text-success');
+                mobileStatus.classList.add('text-danger');
+            }
+        });
+    }
+}
+
+function nameSimilarityPercent(a, b) {
+    const s1 = (a || '').trim().toLowerCase();
+    const s2 = (b || '').trim().toLowerCase();
+    if (!s1 || !s2) return 0;
+    if (s1 === s2) return 100;
+    const longer = Math.max(s1.length, s2.length);
+    let same = 0;
+    for (let i = 0; i < Math.min(s1.length, s2.length); i++) {
+        if (s1[i] === s2[i]) same++;
+    }
+    return Math.round((same / longer) * 100);
+}
+
+function autoGenerateAccountName() {
+    const org = document.getElementById('organisation_name').value || '';
+    const words = org.toUpperCase().replace(/[^A-Z\s]/g, ' ').split(/\s+/).filter(Boolean);
+    const initials = words.map(w => w[0]).join('').slice(0, 8) || 'ORG';
+    document.getElementById('account_name').value = `${initials}-IND`;
+}
+
+function setReadonlyByClass(className, readonly) {
+    document.querySelectorAll('.' + className).forEach(el => {
+        el.readOnly = readonly;
+        el.classList.toggle('readonly-like', readonly);
+    });
+}
+
+function applyCinVerifiedUi() {
+    const cinInput = document.getElementById('cin_number');
+    const btn = document.getElementById('verifyCinBtn');
+    if (cinInput) {
+        cinInput.readOnly = true;
+        cinInput.classList.add('readonly-like');
+    }
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Verified';
+        btn.classList.remove('btn-primary');
+        btn.classList.add('btn-success');
+    }
+}
+
+function resetCinVerifyUi() {
+    const cinInput = document.getElementById('cin_number');
+    const btn = document.getElementById('verifyCinBtn');
+    if (cinInput) {
+        cinInput.readOnly = false;
+        cinInput.classList.remove('readonly-like');
+    }
+    if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Verify CIN';
+        btn.classList.add('btn-primary');
+        btn.classList.remove('btn-success');
+    }
+}
+
+function applyGstVerifiedUi() {
+    const gstInput = document.getElementById('billing_gstin');
+    const btn = document.getElementById('verifyBillingGstBtn');
+    if (gstInput) {
+        gstInput.readOnly = true;
+        gstInput.classList.add('readonly-like');
+    }
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Verified';
+        btn.classList.remove('btn-primary');
+        btn.classList.add('btn-success');
+    }
+}
+
+function resetGstVerifyUi() {
+    const gstInput = document.getElementById('billing_gstin');
+    const btn = document.getElementById('verifyBillingGstBtn');
+    if (gstInput) {
+        gstInput.readOnly = false;
+        gstInput.classList.remove('readonly-like');
+    }
+    if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Verify GST';
+        btn.classList.add('btn-primary');
+        btn.classList.remove('btn-success');
+    }
+}
+
+function toggleCompanyTypeUI() {
+    const t = document.getElementById('company_type').value;
+    const prevIsCinFlow = isCinFlow;
+    isCinFlow = cinTypes.includes(t);
+    document.getElementById('cinWrap').style.display = isCinFlow ? '' : 'none';
+    document.getElementById('udyamWrap').style.display = udyamTypes.includes(t) ? '' : 'none';
+    document.getElementById('regDocWrap').style.display = docTypes.includes(t) ? '' : 'none';
+    if (! isCinFlow) {
+        resetCinVerifyUi();
+    }
+    syncManagementRepresentativeUi(prevIsCinFlow);
+}
+
+function toggleGstUI() {
+    const hasGst = document.getElementById('has_gst_number').checked;
+    document.getElementById('gstBillingWrap').style.display = hasGst ? '' : 'none';
+    document.getElementById('nonGstBillingWrap').style.display = hasGst ? 'none' : '';
+    if (! hasGst) {
+        resetGstVerifyUi();
+    }
+}
+
+async function verifyMca() {
+    const cin = document.getElementById('cin_number').value.trim();
+    if (!cin) { alert('Enter CIN number first.'); return; }
+    const status = document.getElementById('cinStatus');
+    status.textContent = 'Starting verification...';
+
+    const startRes = await fetch('{{ route("user.applications.irin.verify-mca") }}', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
+        body: JSON.stringify({ cin })
+    });
+    const startData = await startRes.json();
+    if (!startData.success) { status.textContent = startData.message || 'Verification failed.'; return; }
+
+    document.getElementById('mca_verification_request_id').value = startData.request_id;
+    status.textContent = 'Verification in progress...';
+
+    let attempts = 0;
+    const timer = setInterval(async () => {
+        attempts++;
+        const pollRes = await fetch('{{ route("user.applications.irin.check-verification-status") }}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
+            body: JSON.stringify({ type: 'mca', request_id: startData.request_id })
+        });
+        const pollData = await pollRes.json();
+        if (pollData.status === 'completed') {
+            clearInterval(timer);
+            if (pollData.is_verified) {
+                status.textContent = 'CIN verified successfully.';
+                applyCinVerifiedUi();
+                const v = pollData.verification_data || {};
+                if (v.company_name) document.getElementById('organisation_name').value = v.company_name;
+                const orgAddr = v.primary_address || v.company_address || '';
+                if (orgAddr) document.getElementById('organisation_address').value = orgAddr;
+                if (v.postcode) document.getElementById('organisation_postcode').value = v.postcode;
+                if (v.industry_type) document.getElementById('industry_type').value = v.industry_type;
+                setReadonlyByClass('org-field', true);
+                autoGenerateAccountName();
+
+                const srcOut = v.source_output || {};
+                const rawDirectors = Array.isArray(v.directors) ? v.directors : (Array.isArray(srcOut.directors) ? srcOut.directors : []);
+                const activeDirectors = rawDirectors.filter((d) => d && (d.end_date === null || d.end_date === undefined || String(d.end_date).trim() === ''));
+                mcaRepresentativeList = activeDirectors;
+                const select = document.getElementById('management_rep_select');
+                select.innerHTML = '<option value="">Select director</option>';
+                mcaRepresentativeList.forEach((r, i) => {
+                    const opt = document.createElement('option');
+                    opt.value = String(i);
+                    const nm = (r.name || '').trim();
+                    const din = (r.din || '').trim();
+                    opt.textContent = nm ? (din ? `${nm} (DIN: ${din})` : nm) : `Director ${i + 1}`;
+                    select.appendChild(opt);
+                });
+
+                if (cinTypes.includes(document.getElementById('company_type').value)) {
+                    const desig = document.getElementById('mr_designation');
+                    desig.innerHTML = '<option value="Director" selected>Director</option>';
+                    desig.disabled = true;
+                    desig.classList.add('readonly-like');
+                }
+
+                const mrNameEl = document.getElementById('mr_name');
+                mrNameEl.value = '';
+                document.getElementById('mr_director_din').value = '';
+                mrNameEl.readOnly = mcaRepresentativeList.length > 0;
+                mrNameEl.classList.toggle('readonly-like', mcaRepresentativeList.length > 0);
+            } else {
+                status.textContent = pollData.message || 'CIN verification failed.';
+            }
+        } else if (pollData.status === 'failed' || attempts > 15) {
+            clearInterval(timer);
+            status.textContent = 'CIN verification timed out/failed.';
+        }
+    }, 2000);
+}
+
+async function verifyBillingGst() {
+    const gstin = document.getElementById('billing_gstin').value.trim().toUpperCase();
+    if (gstin.length !== 15) { alert('Enter valid 15-char GST number.'); return; }
+    const status = document.getElementById('gstBillingStatus');
+    status.textContent = 'Starting GST verification...';
+
+    const startRes = await fetch('{{ route("user.applications.irin.verify-gst") }}', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
+        body: JSON.stringify({ gstin })
+    });
+    const startData = await startRes.json();
+    if (!startData.success) { status.textContent = startData.message || 'GST verify failed.'; return; }
+
+    document.getElementById('gst_verification_request_id').value = startData.request_id;
+    let attempts = 0;
+    const timer = setInterval(async () => {
+        attempts++;
+        const pollRes = await fetch('{{ route("user.applications.irin.check-verification-status") }}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
+            body: JSON.stringify({ type: 'gstin', request_id: startData.request_id })
+        });
+        const pollData = await pollRes.json();
+        if (pollData.status === 'completed') {
+            clearInterval(timer);
+            if (pollData.is_verified) {
+                status.textContent = 'GST verified successfully.';
+                applyGstVerifiedUi();
+                const v = pollData.verification_data || {};
+                if (v.company_name || v.legal_name) document.getElementById('billing_legal_name').value = v.company_name || v.legal_name;
+                if (v.pan) document.getElementById('billing_pan_number').value = v.pan;
+                if (v.primary_address) document.getElementById('billing_address').value = v.primary_address;
+                if (v.postcode) document.getElementById('billing_postcode').value = v.postcode;
+                setReadonlyByClass('bill-field', true);
+            } else {
+                status.textContent = pollData.message || 'GST verification failed.';
+            }
+        } else if (pollData.status === 'failed' || attempts > 15) {
+            clearInterval(timer);
+            status.textContent = 'GST verification timed out/failed.';
+        }
+    }, 2000);
+}
+
+function goStep(step) {
+    if (step > maxUnlockedStep) {
+        return;
+    }
+    document.getElementById('step1').classList.toggle('active', step === 1);
+    document.getElementById('step2').classList.toggle('active', step === 2);
+    document.getElementById('step3').classList.toggle('active', step === 3);
+    document.getElementById('step4').classList.toggle('active', step === 4);
+    document.getElementById('step5').classList.toggle('active', step === 5);
+    document.getElementById('step6').classList.toggle('active', step === 6);
+    document.getElementById('step7').classList.toggle('active', step === 7);
+    document.getElementById('s1Badge').className = step === 1 ? 'badge bg-primary' : 'badge bg-success';
+    document.getElementById('s2Badge').className = step === 2 ? 'badge bg-primary' : (step > 2 ? 'badge bg-success' : 'badge bg-secondary');
+    document.getElementById('s3Badge').className = step === 3 ? 'badge bg-primary' : (step > 3 ? 'badge bg-success' : 'badge bg-secondary');
+    document.getElementById('s4Badge').className = step === 4 ? 'badge bg-primary' : (step > 4 ? 'badge bg-success' : 'badge bg-secondary');
+    document.getElementById('s5Badge').className = step === 5 ? 'badge bg-primary' : (step > 5 ? 'badge bg-success' : 'badge bg-secondary');
+    document.getElementById('s6Badge').className = step === 6 ? 'badge bg-primary' : (step > 6 ? 'badge bg-success' : 'badge bg-secondary');
+    document.getElementById('s7Badge').className = step === 7 ? 'badge bg-primary' : 'badge bg-secondary';
+}
+
+function calcIPv4Fee(addresses) {
+    return 27500 * Math.pow(1.35, Math.log10(addresses) - 8);
+}
+
+function calcIPv6Fee(addresses) {
+    return 24199 * Math.pow(1.35, Math.log10(addresses) - 22);
+}
+
+function fmtInr(v) {
+    return '₹ ' + Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 });
+}
+
+function renderResourceList() {
+    const ipv4Host = document.getElementById('ipv4ResourceList');
+    const ipv6Host = document.getElementById('ipv6ResourceList');
+    ipv4Host.innerHTML = '';
+    ipv6Host.innerHTML = '';
+    resourcePool.ipv4.forEach((item, idx) => {
+        const id = 'ipv4_res_' + idx;
+        const wrap = document.createElement('div');
+        wrap.className = 'form-check';
+        wrap.innerHTML = `<input class="form-check-input" type="radio" name="ipv4_resource_pick" id="${id}" value="${idx}">
+            <label class="form-check-label" for="${id}">${item.size} (${item.addresses} addresses)</label>`;
+        ipv4Host.appendChild(wrap);
+    });
+    resourcePool.ipv6.forEach((item, idx) => {
+        const id = 'ipv6_res_' + idx;
+        const wrap = document.createElement('div');
+        wrap.className = 'form-check';
+        wrap.innerHTML = `<input class="form-check-input" type="radio" name="ipv6_resource_pick" id="${id}" value="${idx}">
+            <label class="form-check-label" for="${id}">${item.size} (${item.addresses} addresses)</label>`;
+        ipv6Host.appendChild(wrap);
+    });
+
+    document.querySelectorAll('input[name="ipv4_resource_pick"]').forEach((el) => {
+        el.addEventListener('change', () => {
+            selectedIPv4Resource = resourcePool.ipv4[Number(el.value)];
+            updateResourceBilling();
+        });
+    });
+    document.querySelectorAll('input[name="ipv6_resource_pick"]').forEach((el) => {
+        el.addEventListener('change', () => {
+            selectedIPv6Resource = resourcePool.ipv6[Number(el.value)];
+            updateResourceBilling();
+        });
+    });
+}
+
+function updateResourceBilling() {
+    const host = document.getElementById('resourceBillingBreakup');
+    const finalEl = document.getElementById('finalBillingAmount');
+    let html = '';
+    let fee4 = null;
+    let fee6 = null;
+    if (selectedIPv4Resource) {
+        fee4 = calcIPv4Fee(Number(selectedIPv4Resource.addresses || 0));
+        html += `<div>IPv4 ${selectedIPv4Resource.size}: ${fmtInr(fee4)}</div>`;
+    }
+    if (selectedIPv6Resource) {
+        fee6 = calcIPv6Fee(Number(selectedIPv6Resource.addresses || 0));
+        html += `<div>IPv6 ${selectedIPv6Resource.size}: ${fmtInr(fee6)}</div>`;
+    }
+    host.innerHTML = html || '<div class="text-muted">Select at least one resource.</div>';
+    const final = fee4 !== null && fee6 !== null ? Math.max(fee4, fee6) : (fee4 ?? fee6 ?? 0);
+    finalEl.textContent = fmtInr(final);
+}
+
+async function fetchResourcesForStep5() {
+    try {
+        const res = await fetch('{{ route("user.applications.irin.pricing") }}');
+        const data = await res.json();
+        if (!data.success || !data.data) {
             return;
         }
-    }
-    
-    if (currentStep < totalSteps) {
-        showStep(currentStep + 1);
+        const raw4 = data.data.ipv4 || data.data.IPv4 || {};
+        const raw6 = data.data.ipv6 || data.data.IPv6 || {};
+        resourcePool.ipv4 = Object.keys(raw4).map((size) => ({ size, ...(raw4[size] || {}) }))
+            .filter((x) => x.viewInForm !== false);
+        resourcePool.ipv6 = Object.keys(raw6).map((size) => ({ size, ...(raw6[size] || {}) }))
+            .filter((x) => x.viewInForm !== false);
+        renderResourceList();
+    } catch (e) {
+        // keep silent
     }
 }
 
-function previousStep() {
-    if (currentStep > 1) {
-        showStep(currentStep - 1);
+function applyIrinnNormalizedPrefill(prefill) {
+    if (!prefill || typeof prefill !== 'object') {
+        return;
     }
+    Object.keys(prefill).forEach((name) => {
+        const val = prefill[name];
+        if (val === null || val === undefined) {
+            return;
+        }
+        const el = document.querySelector('[name="' + String(name).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"]');
+        if (!el) {
+            return;
+        }
+        if (el.type === 'checkbox') {
+            el.checked = val === true || val === 1 || val === '1';
+        } else {
+            el.value = val === false ? '' : String(val);
+        }
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    const size4 = prefill.irinn_ipv4_resource_size;
+    const addr4 = prefill.irinn_ipv4_resource_addresses;
+    if (size4 && resourcePool.ipv4.length) {
+        const idx = resourcePool.ipv4.findIndex((it) => it.size === size4 && String(it.addresses) === String(addr4));
+        if (idx >= 0) {
+            const radio = document.getElementById('ipv4_res_' + idx);
+            if (radio) {
+                radio.checked = true;
+                selectedIPv4Resource = resourcePool.ipv4[idx];
+            }
+        }
+    }
+    const size6 = prefill.irinn_ipv6_resource_size;
+    const addr6 = prefill.irinn_ipv6_resource_addresses;
+    if (size6 && resourcePool.ipv6.length) {
+        const idx = resourcePool.ipv6.findIndex((it) => it.size === size6 && String(it.addresses) === String(addr6));
+        if (idx >= 0) {
+            const radio = document.getElementById('ipv6_res_' + idx);
+            if (radio) {
+                radio.checked = true;
+                selectedIPv6Resource = resourcePool.ipv6[idx];
+            }
+        }
+    }
+    updateResourceBilling();
 }
 
-// Step dot click handler
-document.addEventListener('DOMContentLoaded', function() {
-    // Check if returning from preview
-    const urlParams = new URLSearchParams(window.location.search);
-    const fromPreview = urlParams.get('from_preview');
-    
-    // Restore form data from session if returning from preview
-    if (fromPreview === '1') {
-        // Restore form data from session (stored when preview was clicked)
-        const formData = sessionStorage.getItem('irin_form_data');
-        if (formData) {
-            try {
-                const data = JSON.parse(formData);
-                // Restore all form fields
-                Object.keys(data).forEach(key => {
-                    const field = document.querySelector(`[name="${key}"]`);
-                    if (field) {
-                        if (field.type === 'checkbox' || field.type === 'radio') {
-                            field.checked = field.value === data[key];
-                        } else {
-                            field.value = data[key];
-                        }
+document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('company_type').addEventListener('change', toggleCompanyTypeUI);
+    document.getElementById('has_gst_number').addEventListener('change', toggleGstUI);
+    document.getElementById('organisation_name').addEventListener('input', autoGenerateAccountName);
+    document.getElementById('verifyCinBtn').addEventListener('click', verifyMca);
+    document.getElementById('verifyBillingGstBtn').addEventListener('click', verifyBillingGst);
+
+    document.getElementById('management_rep_select').addEventListener('change', (e) => {
+        const idx = e.target.value;
+        const mrNameEl = document.getElementById('mr_name');
+        const dinHidden = document.getElementById('mr_director_din');
+        if (idx === '') {
+            if (mcaRepresentativeList.length > 0) {
+                mrNameEl.value = '';
+                mrNameEl.readOnly = true;
+                mrNameEl.classList.add('readonly-like');
+            }
+            dinHidden.value = '';
+            return;
+        }
+        const rep = mcaRepresentativeList[Number(idx)] || {};
+        mrNameEl.value = (rep.name || '').trim();
+        mrNameEl.readOnly = true;
+        mrNameEl.classList.add('readonly-like');
+        dinHidden.value = (rep.din || '').trim();
+    });
+
+    fullMrDesignationOptionsHtml = document.getElementById('mr_designation').innerHTML;
+    cloneDesignationOptions(fullMrDesignationOptionsHtml, ['app_designation', 'abuse_designation', 'br_designation']);
+    wireOtp('mr', 'mr');
+    wireOtp('app', 'app');
+    wireOtp('abuse', 'abuse');
+    wireOtp('br', 'br');
+    wireOtp('asn', 'asn');
+    wireOtp('sign', 'sign');
+
+    document.getElementById('goStep2Btn').addEventListener('click', () => {
+        const org = document.getElementById('organisation_name').value.trim();
+        const legal = document.getElementById('billing_legal_name').value.trim();
+        const match = nameSimilarityPercent(org, legal);
+        const mismatch = document.getElementById('nameMatchStatus');
+        if (match < 70) {
+            mismatch.classList.remove('d-none');
+            return;
+        }
+        mismatch.classList.add('d-none');
+        goStep(2);
+    });
+
+    document.getElementById('goStep3Btn').addEventListener('click', () => {
+        if (!getManagementRepresentativeName()) {
+            alert('Please enter or select the management representative name.');
+            return;
+        }
+        if (isCinFlow) {
+            const repSel = document.getElementById('management_rep_select');
+            if (mcaRepresentativeList.length > 0 && repSel.value === '') {
+                alert('Please select a director from the CIN list.');
+                return;
+            }
+        } else if (!document.getElementById('mr_designation').value) {
+            alert('Please select designation.');
+            return;
+        }
+        if (!IRINN_RESUBMIT_MODE && (!verificationState.mr.email || !verificationState.mr.mobile)) {
+            alert('Please complete Email and Mobile OTP verification in Step 2.');
+            return;
+        }
+        verifiedEmails.add((document.getElementById('mr_email').value || '').trim().toLowerCase());
+        verifiedMobiles.add((document.getElementById('mr_mobile').value || '').trim().replace(/\D/g, '').slice(0, 10));
+        maxUnlockedStep = Math.max(maxUnlockedStep, 3);
+        goStep(3);
+    });
+
+    document.getElementById('goStep4Btn').addEventListener('click', () => {
+        if (!IRINN_RESUBMIT_MODE && (!verificationState.app.email || !verificationState.app.mobile)) {
+            alert('Please complete Technical Person email/mobile verification.');
+            return;
+        }
+        if (!IRINN_RESUBMIT_MODE && (!verificationState.abuse.email || !verificationState.abuse.mobile)) {
+            alert('Please complete Abuse Contact email/mobile verification.');
+            return;
+        }
+        maxUnlockedStep = Math.max(maxUnlockedStep, 4);
+        goStep(4);
+    });
+
+    function copyProfile(targetPrefix, sourceValues, sourceVerification, makeReadonly = true) {
+        setSectionValues(targetPrefix, sourceValues, makeReadonly);
+        if (sourceVerification.email) {
+            verificationState[targetPrefix].email = true;
+            verifiedEmails.add((sourceValues.email || '').trim().toLowerCase());
+            applyIrinnEmailVerifiedUi(targetPrefix);
+            const elE = document.getElementById(targetPrefix + 'EmailStatus');
+            if (elE) {
+                elE.textContent = 'Verified (same contact as previous step).';
+                elE.classList.remove('text-danger');
+                elE.classList.add('text-success');
+            }
+        } else {
+            resetIrinnEmailOtpUi(targetPrefix);
+        }
+        if (sourceVerification.mobile) {
+            verificationState[targetPrefix].mobile = true;
+            verifiedMobiles.add((sourceValues.mobile || '').trim().replace(/\D/g, '').slice(0, 10));
+            applyIrinnMobileVerifiedUi(targetPrefix);
+            const elM = document.getElementById(targetPrefix + 'MobileStatus');
+            if (elM) {
+                elM.textContent = 'Verified (same contact as previous step).';
+                elM.classList.remove('text-danger');
+                elM.classList.add('text-success');
+            }
+        } else {
+            resetIrinnMobileOtpUi(targetPrefix);
+        }
+    }
+
+    document.getElementById('appSameAsMgmtBtn').addEventListener('click', () => {
+        copyProfile('app', {
+            name: getManagementRepresentativeName(),
+            designation: document.getElementById('mr_designation').value,
+            email: document.getElementById('mr_email').value,
+            mobile: document.getElementById('mr_mobile').value
+        }, verificationState.mr, true);
+    });
+
+    document.getElementById('abuseSameAsMgmtBtn').addEventListener('click', () => {
+        copyProfile('abuse', {
+            name: getManagementRepresentativeName(),
+            designation: document.getElementById('mr_designation').value,
+            email: document.getElementById('mr_email').value,
+            mobile: document.getElementById('mr_mobile').value
+        }, verificationState.mr, true);
+    });
+
+    document.getElementById('abuseSameAsApplicantBtn').addEventListener('click', () => {
+        copyProfile('abuse', getSectionValues('app'), verificationState.app, true);
+    });
+
+    document.getElementById('brSameAsMgmtBtn').addEventListener('click', () => {
+        copyProfile('br', {
+            name: getManagementRepresentativeName(),
+            designation: document.getElementById('mr_designation').value,
+            email: document.getElementById('mr_email').value,
+            mobile: document.getElementById('mr_mobile').value
+        }, verificationState.mr, true);
+    });
+
+    document.getElementById('brSameAsApplicantBtn').addEventListener('click', () => {
+        copyProfile('br', getSectionValues('app'), verificationState.app, true);
+    });
+
+    document.getElementById('brSameAsAbuseBtn').addEventListener('click', () => {
+        copyProfile('br', getSectionValues('abuse'), verificationState.abuse, true);
+    });
+
+    document.getElementById('goStep5Btn').addEventListener('click', () => {
+        if (!IRINN_RESUBMIT_MODE && (!verificationState.br.email || !verificationState.br.mobile)) {
+            alert('Please complete Billing Representative email/mobile verification.');
+            return;
+        }
+        maxUnlockedStep = Math.max(maxUnlockedStep, 5);
+        goStep(5);
+    });
+
+    document.getElementById('goStep6Btn').addEventListener('click', () => {
+        if (!selectedIPv4Resource && !selectedIPv6Resource) {
+            alert('Please select at least one resource from IPv4 or IPv6.');
+            return;
+        }
+        maxUnlockedStep = Math.max(maxUnlockedStep, 6);
+        goStep(6);
+    });
+
+    document.getElementById('goStep7Btn').addEventListener('click', () => {
+        if (!document.getElementById('asn_name').value.trim() || !document.getElementById('asn_number').value.trim()) {
+            alert('Please complete Upstream Provider Name and AS Number.');
+            return;
+        }
+        if (!IRINN_RESUBMIT_MODE && (!verificationState.asn.email || !verificationState.asn.mobile)) {
+            alert('Please complete Upstream Provider email and mobile OTP verification.');
+            return;
+        }
+        if (!IRINN_RESUBMIT_MODE && (!verificationState.sign.email || !verificationState.sign.mobile)) {
+            alert('Please complete Authorized Signatory email/mobile verification.');
+            return;
+        }
+        if (!IRINN_RESUBMIT_MODE && (!document.getElementById('signature_proof_file').files.length || !document.getElementById('board_resolution_file_step6').files.length)) {
+            alert('Please upload signature proof and board resolution documents.');
+            return;
+        }
+        maxUnlockedStep = Math.max(maxUnlockedStep, 7);
+        goStep(7);
+    });
+
+    document.getElementById('submitIrinApplicationBtn').addEventListener('click', async () => {
+        if (!IRINN_RESUBMIT_MODE) {
+            const required = [
+                'kyc_network_diagram_file',
+                'kyc_equipment_invoice_file',
+                'kyc_bandwidth_proof_file',
+                'kyc_irinn_agreement_copy_file'
+            ];
+            const missing = required.some((id) => !document.getElementById(id).files.length);
+            if (missing) {
+                alert('Please upload all mandatory KYC documents in Step 7.');
+                return;
+            }
+        }
+
+        const btn = document.getElementById('submitIrinApplicationBtn');
+        const originalText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = 'Submitting...';
+
+        try {
+            const formEl = document.getElementById('irinnFlowForm');
+            const syncHost = document.getElementById('irinnFlowHiddenSync');
+            if (syncHost) {
+                syncHost.innerHTML = '';
+                const addSyncHidden = (name, value) => {
+                    const inp = document.createElement('input');
+                    inp.type = 'hidden';
+                    inp.name = name;
+                    inp.value = value == null ? '' : String(value);
+                    syncHost.appendChild(inp);
+                };
+                addSyncHidden('irinn_ipv4_resource_size', selectedIPv4Resource?.size ?? '');
+                addSyncHidden('irinn_ipv4_resource_addresses', selectedIPv4Resource?.addresses != null ? String(selectedIPv4Resource.addresses) : '');
+                addSyncHidden('irinn_ipv6_resource_size', selectedIPv6Resource?.size ?? '');
+                addSyncHidden('irinn_ipv6_resource_addresses', selectedIPv6Resource?.addresses != null ? String(selectedIPv6Resource.addresses) : '');
+                const feeNum = (document.getElementById('finalBillingAmount').textContent || '0').replace(/[^\d.]/g, '');
+                addSyncHidden('irinn_resource_fee_amount', feeNum || '');
+            }
+            // Disabled <select> fields are omitted from FormData; "Same as …" uses disabled on designation selects.
+            const designationSelectIds = ['mr_designation', 'app_designation', 'abuse_designation', 'br_designation'];
+            const designationSelectsToRestore = [];
+            designationSelectIds.forEach((id) => {
+                const el = document.getElementById(id);
+                if (el && el.tagName === 'SELECT' && el.disabled) {
+                    el.disabled = false;
+                    designationSelectsToRestore.push(el);
+                }
+            });
+            const formData = new FormData(formEl);
+            designationSelectsToRestore.forEach((el) => {
+                el.disabled = true;
+            });
+
+            const res = await fetch('{{ route("user.applications.irin.store-new") }}', {
+                method: 'POST',
+                headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
+                body: formData
+            });
+
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                let msg = data.message || 'Submission failed. Please check required fields and try again.';
+                if (data.errors && typeof data.errors === 'object') {
+                    const lines = Object.values(data.errors).flat().filter(Boolean);
+                    if (lines.length > 1) {
+                        msg = lines.slice(0, 10).join('\n');
                     }
-                });
-                // Go to last step (step 5); mark all steps as visited so user can go back to any
-                for (let i = 1; i <= 5; i++) visitedSteps.add(i);
-                currentStep = 5;
-                showStep(5);
-            } catch (e) {
-                console.error('Error restoring form data:', e);
-                // Fallback to step 1
-                currentStep = 1;
-                showStep(1);
-            }
-        } else {
-            currentStep = 5;
-            showStep(5);
-        }
-    } else {
-        // Normal flow - start at step 1
-        // Clear any previous form data from sessionStorage
-        sessionStorage.removeItem('irin_form_data');
-        
-        // Reset form completely
-        const form = document.getElementById('irinnApplicationForm');
-        if (form) {
-            form.reset();
-            
-            // Clear all file inputs
-            const fileInputs = form.querySelectorAll('input[type="file"]');
-            fileInputs.forEach(input => {
-                input.value = '';
-            });
-            
-            // Clear all select dropdowns to first option
-            const selects = form.querySelectorAll('select');
-            selects.forEach(select => {
-                if (select.options.length > 0) {
-                    select.selectedIndex = 0;
                 }
-            });
-            
-            // Uncheck all checkboxes
-            const checkboxes = form.querySelectorAll('input[type="checkbox"]');
-            checkboxes.forEach(checkbox => {
-                checkbox.checked = false;
-            });
-        }
-        
-        // Reset pricing display
-        const pricingDisplay = document.getElementById('pricingDisplay');
-        if (pricingDisplay) {
-            pricingDisplay.style.display = 'none';
-        }
-        
-        // Reset pricing values
-        const maxIpFee = document.getElementById('max_ip_fee');
-        const gstAmount = document.getElementById('gst_amount');
-        const totalFee = document.getElementById('total_fee');
-        if (maxIpFee) maxIpFee.textContent = '₹ 0';
-        if (gstAmount) gstAmount.textContent = '₹ 0';
-        if (totalFee) totalFee.textContent = '₹ 0';
-        
-        // Hide all steps and show only step 1
-        document.querySelectorAll('.form-step').forEach(s => {
-            s.classList.remove('active');
-            s.style.display = 'none';
-        });
-        const firstStep = document.getElementById('step1');
-        if (firstStep) {
-            firstStep.classList.add('active');
-            firstStep.style.display = 'block';
-        }
-        currentStep = 1;
-        visitedSteps.clear();
-        visitedSteps.add(1);
-
-        // Reset step indicators
-        document.querySelectorAll('.step-item').forEach((item, index) => {
-            const stepNum = index + 1;
-            item.classList.remove('active', 'visited');
-            if (stepNum === 1) {
-                item.classList.add('active', 'visited');
+                alert(msg);
+                return;
             }
-        });
-        
-        // Re-fetch pricing to ensure fresh data
-        fetchIpPricing();
-    }
-    
-    // Step item click – allow navigation to any visited step
-    document.querySelectorAll('.step-item').forEach(item => {
-        item.addEventListener('click', function() {
-            const step = parseInt(this.getAttribute('data-step'), 10);
-            if (visitedSteps.has(step) || step === 1) {
-                showStep(step);
+
+            if (data.redirect_url) {
+                window.location.href = data.redirect_url;
+                return;
             }
-        });
+
+            alert(data.message || 'Application submitted successfully.');
+        } catch (error) {
+            alert('Unable to submit right now. Please try again.');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
     });
-    
-    // Fetch pricing on load
-    fetchIpPricing();
-    // Resubmission: re-apply dropdown prefill after options may have loaded (async)
-    if (window.irinnIsResubmission) {
-        setTimeout(applyResubmissionPrefillToSelects, 400);
-        setTimeout(applyResubmissionPrefillToSelects, 1000);
-    }
-});
 
-// Form submission
-document.getElementById('irinnApplicationForm').addEventListener('submit', function(e) {
-    // Resubmission: allow normal form POST (no AJAX, no payment)
-    if (this.getAttribute('action').indexOf('resubmit') !== -1) {
-        if (!confirm('Resubmit your application with the updated details? No payment will be charged.')) {
-            e.preventDefault();
+    document.getElementById('backStep1Btn').addEventListener('click', () => goStep(1));
+    document.getElementById('backStep2Btn').addEventListener('click', () => goStep(2));
+    document.getElementById('backStep3Btn').addEventListener('click', () => goStep(3));
+    document.getElementById('backStep4Btn').addEventListener('click', () => goStep(4));
+    document.getElementById('backStep5Btn').addEventListener('click', () => goStep(5));
+    document.getElementById('backStep6Btn').addEventListener('click', () => goStep(6));
+    document.getElementById('s1Badge').addEventListener('click', () => goStep(1));
+    document.getElementById('s2Badge').addEventListener('click', () => goStep(2));
+    document.getElementById('s3Badge').addEventListener('click', () => goStep(3));
+    document.getElementById('s4Badge').addEventListener('click', () => goStep(4));
+    document.getElementById('s5Badge').addEventListener('click', () => goStep(5));
+    document.getElementById('s6Badge').addEventListener('click', () => goStep(6));
+    document.getElementById('s7Badge').addEventListener('click', () => goStep(7));
+
+    document.getElementById('addKycOtherDocumentBtn')?.addEventListener('click', appendKycOtherDocumentRow);
+    document.getElementById('kycOtherDocumentsList')?.addEventListener('click', (e) => {
+        if (e.target.closest('.remove-kyc-other-doc')) {
+            e.target.closest('.kyc-other-doc-row')?.remove();
+            kycOtherDocSlotCount = Math.max(0, kycOtherDocSlotCount - 1);
+            updateKycOtherDocUi();
         }
-        return;
-    }
-
-    e.preventDefault();
-    
-    if (!this.checkValidity()) {
-        this.reportValidity();
-        return;
-    }
-
-    if (!confirm('Are you sure you want to submit this application? Once submitted, it cannot be edited unless allowed by admin.')) {
-        return;
-    }
-
-    const formData = new FormData(this);
-    formData.append('action', 'submit');
-
-    const submitBtn = document.getElementById('submitBtn');
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Submitting...';
-
-    // Check if wallet payment is available
-    const useWallet = document.getElementById('useWalletPayment')?.checked || false;
-    const paymentRoute = useWallet 
-        ? '{{ route("user.applications.irin.initiate-payment-with-wallet") }}'
-        : '{{ route("user.applications.irin.store-new") }}';
-
-    fetch(paymentRoute, {
-        method: 'POST',
-        headers: {
-            'X-CSRF-TOKEN': '{{ csrf_token() }}'
-        },
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-            if (data.success) {
-                if (data.payment_url && data.payment_data) {
-                    // Create and submit payment form to PayU
-                    const paymentForm = document.createElement('form');
-                    paymentForm.method = 'POST';
-                    paymentForm.action = data.payment_url;
-                    
-                    Object.keys(data.payment_data).forEach(key => {
-                        const input = document.createElement('input');
-                        input.type = 'hidden';
-                        input.name = key;
-                        input.value = data.payment_data[key];
-                        paymentForm.appendChild(input);
-                    });
-                    
-                    // Clear form data before redirecting to payment
-                    sessionStorage.removeItem('irin_form_data');
-                    // Clear form data before redirecting to payment
-                    sessionStorage.removeItem('irin_form_data');
-                    document.body.appendChild(paymentForm);
-                    paymentForm.submit();
-                } else if (data.redirect_url) {
-                    // Wallet payment successful, redirect
-                    // Clear form data before redirecting
-                    sessionStorage.removeItem('irin_form_data');
-                    window.location.href = data.redirect_url;
-                } else {
-                    alert('Application submitted successfully!');
-                    // Clear form data before redirecting
-                    sessionStorage.removeItem('irin_form_data');
-                    window.location.href = '{{ route("user.applications.index") }}';
-                }
-            } else {
-            alert('Error submitting application: ' + (data.message || 'Unknown error'));
-            submitBtn.disabled = false;
-            submitBtn.textContent = 'Final Submit';
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('Error submitting application');
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Final Submit';
     });
-});
+    updateKycOtherDocUi();
 
-// Preview functionality (only when not resubmission)
-const previewBtnEl = document.getElementById('previewBtn');
-if (previewBtnEl) {
-previewBtnEl.addEventListener('click', function() {
-    const form = document.getElementById('irinnApplicationForm');
-    if (!form.checkValidity()) {
-        form.reportValidity();
-        return;
-    }
-    
-    const formData = new FormData(form);
-    formData.append('action', 'preview');
-    
-    // Show loading
-    const previewBtn = document.getElementById('previewBtn');
-    const originalText = previewBtn.textContent;
-    previewBtn.disabled = true;
-    previewBtn.textContent = 'Loading Preview...';
-    
-    fetch('{{ route("user.applications.irin.store-new") }}', {
-        method: 'POST',
-        headers: {
-            'X-CSRF-TOKEN': '{{ csrf_token() }}'
-        },
-        body: formData
-    })
-    .then(response => {
-        const contentType = response.headers.get('content-type');
-        if (!contentType || !contentType.includes('application/json')) {
-            throw new Error('Server returned non-JSON. Please try again.');
+    (async () => {
+        await fetchResourcesForStep5();
+        if (IRINN_RESUBMIT_MODE) {
+            applyIrinnNormalizedPrefill(IRINN_PREFILL);
         }
-        return response.json().then(data => {
-            if (!response.ok) {
-                throw new Error(data.message || (data.errors ? JSON.stringify(data.errors) : 'Server error'));
-            }
-            return data;
-        });
-    })
-    .then(data => {
-        previewBtn.disabled = false;
-        previewBtn.textContent = originalText;
-        
-        if (data.success && data.redirect_url) {
-            window.location.href = data.redirect_url;
-        } else {
-            const errorMsg = data.message || (data.errors ? JSON.stringify(data.errors) : 'Unknown error');
-            alert('Error loading preview: ' + errorMsg);
-            console.error('Preview error:', data);
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        previewBtn.disabled = false;
-        previewBtn.textContent = originalText;
-        alert('Error loading preview: ' + (error.message || 'Please check console for details'));
-    });
+        toggleCompanyTypeUI();
+        toggleGstUI();
+    })();
 });
-}
 </script>
 @endpush
-@endsection

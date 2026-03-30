@@ -223,9 +223,9 @@
             </div>
         </div>
 
-        <!-- Applicant Details -->
+        <!-- Technical Person Details -->
         <div class="section">
-            <div class="section-title">2. Applicant Details</div>
+            <div class="section-title">2. Technical Person Details</div>
             <div class="row">
                 <div class="label">Name:</div>
                 <div class="value">{{ $data['mr_name'] ?? 'N/A' }}</div>

@@ -2151,10 +2151,10 @@
                         </div>
                     </div>
 
-                    <!-- Applicant Details -->
+                    <!-- Technical Person / MR Details -->
                     <div class="card mb-3">
                         <div class="card-header bg-light">
-                            <h6 class="mb-0">Applicant Details</h6>
+                            <h6 class="mb-0">Technical Person Details</h6>
                         </div>
                         <div class="card-body">
                             <div class="row">

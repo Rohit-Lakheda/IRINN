@@ -691,7 +691,7 @@
             <div class="step-icon"><i class="fas fa-user"></i></div>
             <div class="step-info">
                 <div class="step-number">Step 3</div>
-                <div class="step-name">Applicant Details</div>
+                <div class="step-name">Technical Person Details</div>
             </div>
         </div>
         
@@ -1001,10 +1001,10 @@
                 </div>
             </div>
             
-            <!-- Step 3: Applicant Details -->
+            <!-- Step 3: Technical Person Details -->
             <div class="form-step" data-step="3" style="display: none;">
                 <div class="form-card">
-                    <h3><i class="fas fa-user"></i> Applicant Details</h3>
+                    <h3><i class="fas fa-user"></i> Technical Person Details</h3>
                     <p class="text-muted mb-4">Your details are fetched from your profile. Only designation needs to be filled.</p>
                     
                     <div class="row">

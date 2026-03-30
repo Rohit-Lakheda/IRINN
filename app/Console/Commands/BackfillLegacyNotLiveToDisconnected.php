@@ -20,7 +20,7 @@ class BackfillLegacyNotLiveToDisconnected extends Command
      *
      * @var string
      */
-    protected $description = 'Backfill service_status=disconnected for legacy IX members where is_active=false';
+    protected $description = 'Backfill service_status=disconnected for IRINN members where is_active=false';
 
     /**
      * Execute the console command.
@@ -30,7 +30,7 @@ class BackfillLegacyNotLiveToDisconnected extends Command
         $this->info('Backfilling legacy NOT LIVE members to DISCONNECTED…');
 
         $baseQuery = Application::query()
-            ->where('application_type', 'IX')
+            ->where('application_type', 'IRINN')
             ->whereNotNull('membership_id')
             ->where('is_active', false)
             ->where(function ($q) {

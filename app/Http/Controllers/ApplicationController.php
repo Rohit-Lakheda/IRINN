@@ -2,14 +2,19 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\StoreIrinNewFlowRequest;
 use App\Mail\ApplicationInvoiceMail;
 use App\Models\Application;
 use App\Models\ApplicationStatusHistory;
 use App\Models\GstVerification;
 use App\Models\IpPricing;
+use App\Models\McaVerification;
 use App\Models\PaymentTransaction;
 use App\Models\Registration;
 use App\Models\UserKycProfile;
+use App\Services\PayuGatewayPaymentProcessor;
+use App\Services\PayuService;
+use App\Support\IrinnApplicationDisplayEnricher;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Exception;
 use Illuminate\Http\JsonResponse;
@@ -20,6 +25,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 
 class ApplicationController extends Controller
@@ -48,59 +54,23 @@ class ApplicationController extends Controller
             $query = Application::with(['statusHistory'])
                 ->where('user_id', $userId);
 
-            // Filter by live/not live status (IX: is_active + service_activation_date; IRINN: status = billing)
-            $liveFilter = $request->get('live_filter', 'all'); // all, live, not_live
-            if ($liveFilter === 'live') {
-                $query->where(function ($q) {
-                    $q->where(function ($q2) {
-                        $q2->where('application_type', 'IX')
-                            ->where('is_active', true)
-                            ->whereNotNull('service_activation_date');
-                    })->orWhere(function ($q2) {
-                        $q2->where('application_type', 'IRINN')
-                            ->where('status', 'billing');
-                    });
-                });
-            } elseif ($liveFilter === 'not_live') {
-                $query->where(function ($q) {
-                    $q->where(function ($q2) {
-                        $q2->where('application_type', 'IX')
-                            ->where(function ($q3) {
-                                $q3->where('is_active', false)->orWhereNull('service_activation_date');
-                            });
-                    })->orWhere(function ($q2) {
-                        $q2->where('application_type', 'IRINN')
-                            ->where('status', '!=', 'billing');
-                    });
-                });
-            }
-
             // Dynamic search functionality
             if ($request->filled('search')) {
                 $search = $request->input('search');
 
                 // Map current stage display names to status codes for searching
                 $stageToStatusMap = [
-                    'IX Application Processor' => ['submitted', 'resubmitted', 'processor_resubmission', 'legal_sent_back', 'head_sent_back'],
-                    'IX Legal' => ['processor_forwarded_legal'],
-                    'IX Head' => ['legal_forwarded_head', 'ceo_sent_back_head'],
-                    'CEO' => ['head_forwarded_ceo'],
-                    'Nodal Officer' => ['ceo_approved', 'port_hold', 'port_not_feasible', 'customer_denied'],
-                    'IX Tech Team' => ['port_assigned'],
-                    'IX Account' => ['ip_assigned', 'invoice_pending'],
-                    'Completed' => ['payment_verified'],
                     'Draft' => ['draft'],
                     'Payment Pending' => ['payment_pending'],
                     'Rejected' => ['rejected', 'ceo_rejected'],
                     'Approved' => ['approved'],
-                    // Legacy stages
                     'Processor' => ['pending', 'processor_review'],
                     'Finance' => ['processor_approved', 'finance_review'],
                     'Technical' => ['finance_approved'],
-                    // IRINN stages
-                    'Helpdesk' => ['helpdesk'],
+                    'Helpdesk' => ['helpdesk', 'submitted'],
                     'Hostmaster' => ['hostmaster'],
                     'Billing' => ['billing'],
+                    'Billing approved' => ['billing_approved'],
                     'Resubmission Requested' => ['resubmission_requested'],
                     'Pending' => ['pending'],
                 ];
@@ -126,12 +96,6 @@ class ApplicationController extends Controller
                         ->when(! empty($matchingStatuses), function ($q) use ($matchingStatuses) {
                             $q->orWhereIn('status', $matchingStatuses);
                         })
-                        // IX / common: location, port_selection
-                        ->orWhereRaw("JSON_UNQUOTE(JSON_EXTRACT(application_data, '$.location.name')) LIKE ?", ["%{$search}%"])
-                        ->orWhereRaw("JSON_UNQUOTE(JSON_EXTRACT(application_data, '$.location.node_type')) LIKE ?", ["%{$search}%"])
-                        ->orWhereRaw("JSON_UNQUOTE(JSON_EXTRACT(application_data, '$.location.state')) LIKE ?", ["%{$search}%"])
-                        ->orWhereRaw("JSON_UNQUOTE(JSON_EXTRACT(application_data, '$.port_selection.capacity')) LIKE ?", ["%{$search}%"])
-                        ->orWhereRaw("JSON_UNQUOTE(JSON_EXTRACT(application_data, '$.port_selection.node_name')) LIKE ?", ["%{$search}%"])
                         // IRINN: part2 IP resources (IPv4, IPv6 prefix, ASN)
                         ->orWhereRaw("JSON_UNQUOTE(JSON_EXTRACT(application_data, '$.part2.ipv4_prefix')) LIKE ?", ["%{$search}%"])
                         ->orWhereRaw("JSON_UNQUOTE(JSON_EXTRACT(application_data, '$.part2.ipv6_prefix')) LIKE ?", ["%{$search}%"])
@@ -140,12 +104,6 @@ class ApplicationController extends Controller
             }
 
             $applications = $query->latest()->paginate(15)->withQueryString();
-
-            // Check if user has any submitted IX application
-            $hasSubmittedIxApplication = Application::where('user_id', $userId)
-                ->where('application_type', 'IX')
-                ->whereIn('status', ['submitted', 'approved', 'payment_verified', 'processor_forwarded_legal', 'legal_forwarded_head', 'head_forwarded_ceo', 'ceo_approved', 'port_assigned', 'ip_assigned', 'invoice_pending'])
-                ->exists();
 
             // Get pending invoices for each application to show Pay Now buttons (exclude cancelled and credit note invoices)
             $applicationIds = $applications->pluck('id')->toArray();
@@ -156,33 +114,7 @@ class ApplicationController extends Controller
                 ->get()
                 ->groupBy('application_id');
 
-            // Get counts for filter display (IRINN billing = live)
-            $totalCount = Application::where('user_id', $userId)->count();
-            $liveCount = Application::where('user_id', $userId)
-                ->where(function ($q) {
-                    $q->where(function ($q2) {
-                        $q2->where('application_type', 'IX')
-                            ->where('is_active', true)
-                            ->whereNotNull('service_activation_date');
-                    })->orWhere(function ($q2) {
-                        $q2->where('application_type', 'IRINN')->where('status', 'billing');
-                    });
-                })
-                ->count();
-            $notLiveCount = Application::where('user_id', $userId)
-                ->where(function ($q) {
-                    $q->where(function ($q2) {
-                        $q2->where('application_type', 'IX')
-                            ->where(function ($q3) {
-                                $q3->where('is_active', false)->orWhereNull('service_activation_date');
-                            });
-                    })->orWhere(function ($q2) {
-                        $q2->where('application_type', 'IRINN')->where('status', '!=', 'billing');
-                    });
-                })
-                ->count();
-
-            return response()->view('user.applications.index', compact('user', 'applications', 'hasSubmittedIxApplication', 'pendingInvoicesByApplication', 'liveFilter', 'totalCount', 'liveCount', 'notLiveCount'))
+            return response()->view('user.applications.index', compact('user', 'applications', 'pendingInvoicesByApplication'))
                 ->header('Cache-Control', 'no-cache, no-store, max-age=0, must-revalidate')
                 ->header('Pragma', 'no-cache')
                 ->header('Expires', 'Fri, 01 Jan 1990 00:00:00 GMT');
@@ -217,38 +149,30 @@ class ApplicationController extends Controller
             // Get application with status history and GST change history
             // Do NOT load verification relationships - we'll use data from application table columns only
             // is_active shows live status, not visibility
-            $application = Application::with(['statusHistory', 'serviceStatusHistories', 'gstChangeHistory'])
+            $application = Application::with([
+                'statusHistory' => fn ($q) => $q->orderBy('created_at'),
+                'serviceStatusHistories',
+                'gstChangeHistory',
+            ])
                 ->where('id', $id)
                 ->where('user_id', $userId)
                 ->first();
-            
-            if (!$application) {
+
+            if (! $application) {
                 Log::warning('Application not found', [
                     'application_id' => $id,
                     'user_id' => $userId,
                     'request_url' => request()->url(),
                 ]);
+
                 return redirect()->route('user.applications.index')
                     ->with('error', 'Application not found or you do not have permission to view it.');
             }
 
-            // Get plan change request data for IX applications
+            $application->statusHistory->each(fn ($row) => $row->setRelation('application', $application));
+
             $pendingPlanChange = null;
             $approvedPlanChange = null;
-
-            if ($application->application_type === 'IX' && $application->assigned_port_capacity) {
-                $pendingPlanChange = \App\Models\PlanChangeRequest::where('application_id', $application->id)
-                    ->where('status', 'pending')
-                    ->latest()
-                    ->first();
-
-                $approvedPlanChange = \App\Models\PlanChangeRequest::where('application_id', $application->id)
-                    ->where('status', 'approved')
-                    ->whereNotNull('effective_from')
-                    ->where('effective_from', '>', now('Asia/Kolkata'))
-                    ->latest('effective_from')
-                    ->first();
-            }
 
             // Get pending GST update requests for this application
             $pendingGstUpdateRequest = \App\Models\ApplicationGstUpdateRequest::where('application_id', $application->id)
@@ -256,31 +180,9 @@ class ApplicationController extends Controller
                 ->latest()
                 ->first();
 
-            // Always load registration and KYC details for IRINN applications from database
             if ($application->application_type === 'IRINN') {
-                // Force load for IRINN applications
-                $registrationDetails = [
-                    'registration_id' => $user->registrationid,
-                    'registration_type' => $user->registration_type,
-                    'pancardno' => $user->pancardno,
-                    'fullname' => $user->fullname,
-                    'email' => $user->email,
-                    'mobile' => $user->mobile,
-                    'dateofbirth' => $user->dateofbirth?->format('Y-m-d'),
-                    'registrationdate' => $user->registrationdate?->format('Y-m-d'),
-                    'registrationtime' => $user->registrationtime,
-                    'pan_verified' => $user->pan_verified,
-                    'email_verified' => $user->email_verified,
-                    'mobile_verified' => $user->mobile_verified,
-                    'status' => $user->status,
-                    'address' => $user->address,
-                    'city' => $user->city,
-                    'state' => $user->state,
-                    'pincode' => $user->pincode,
-                    'country' => $user->country ?? 'India',
-                ];
-                $application->registration_details = $registrationDetails;
-            } elseif (!$application->registration_details) {
+                IrinnApplicationDisplayEnricher::enrich($application);
+            } elseif (! $application->registration_details) {
                 // Load for non-IRINN if not already set
                 $registrationDetails = [
                     'registration_id' => $user->registrationid,
@@ -305,97 +207,7 @@ class ApplicationController extends Controller
                 $application->registration_details = $registrationDetails;
             }
 
-            // Always load KYC details for IRINN applications from database
-            if ($application->application_type === 'IRINN') {
-                // Force load for IRINN applications
-                try {
-                    $kycProfile = UserKycProfile::where('user_id', $userId)->latest()->first();
-                    if ($kycProfile) {
-                        $kycDetails = [
-                        // Organization Details
-                        'organisation_type' => $kycProfile->organisation_type,
-                        'organisation_type_other' => $kycProfile->organisation_type_other,
-                        'affiliate_type' => $kycProfile->affiliate_type,
-                        'affiliate_verification_mode' => $kycProfile->affiliate_verification_mode,
-                        
-                        // GST Information
-                        'gstin' => $kycProfile->gstin,
-                        'gst_verified' => $kycProfile->gst_verified,
-                        'legal_name' => $kycProfile->legal_name,
-                        'trade_name' => $kycProfile->trade_name,
-                        'taxpayer_type' => $kycProfile->taxpayer_type,
-                        'gst_type' => $kycProfile->gst_type,
-                        'gstin_status' => $kycProfile->gstin_status,
-                        'company_status' => $kycProfile->company_status,
-                        'registration_date' => $kycProfile->registration_date,
-                        'constitution_of_business' => $kycProfile->constitution_of_business,
-                        'state' => $kycProfile->state,
-                        'pincode' => $kycProfile->pincode,
-                        'primary_address' => $kycProfile->primary_address,
-                        
-                        // UDYAM Information
-                        'udyam_number' => $kycProfile->udyam_number,
-                        'udyam_verified' => $kycProfile->udyam_verified,
-                        
-                        // MCA Information
-                        'cin' => $kycProfile->cin,
-                        'mca_verified' => $kycProfile->mca_verified,
-                        'roc_iec_number' => $kycProfile->roc_iec_number,
-                        'roc_iec_verified' => $kycProfile->roc_iec_verified,
-                        
-                        // Management Representative
-                        'management_name' => $kycProfile->management_name,
-                        'management_dob' => $kycProfile->management_dob?->format('Y-m-d'),
-                        'management_pan' => $kycProfile->management_pan,
-                        'management_email' => $kycProfile->management_email,
-                        'management_mobile' => $kycProfile->management_mobile,
-                        'management_din' => $kycProfile->management_din,
-                        'management_pan_verified' => $kycProfile->management_pan_verified,
-                        'management_email_verified' => $kycProfile->management_email_verified,
-                        'management_mobile_verified' => $kycProfile->management_mobile_verified,
-                        
-                        // Authorized Representative
-                        'authorized_name' => $kycProfile->authorized_name,
-                        'authorized_dob' => $kycProfile->authorized_dob?->format('Y-m-d'),
-                        'authorized_pan' => $kycProfile->authorized_pan,
-                        'authorized_email' => $kycProfile->authorized_email,
-                        'authorized_mobile' => $kycProfile->authorized_mobile,
-                        'authorized_pan_verified' => $kycProfile->authorized_pan_verified,
-                        'authorized_email_verified' => $kycProfile->authorized_email_verified,
-                        'authorized_mobile_verified' => $kycProfile->authorized_mobile_verified,
-                        
-                        // Billing and Public Details
-                        'whois_source' => $kycProfile->whois_source,
-                        'billing_person_name' => $kycProfile->billing_person_name,
-                        'billing_person_email' => $kycProfile->billing_person_email,
-                        'billing_person_mobile' => $kycProfile->billing_person_mobile,
-                        'billing_address_type' => $kycProfile->billing_address_type,
-                        'billing_address' => $kycProfile->billing_address,
-                        
-                        // Legacy fields (for backward compatibility)
-                        'contact_name' => $kycProfile->authorized_name,
-                        'contact_pan' => $kycProfile->authorized_pan,
-                        'contact_dob' => $kycProfile->authorized_dob?->format('Y-m-d'),
-                        'contact_email' => $kycProfile->authorized_email,
-                        'contact_mobile' => $kycProfile->authorized_mobile,
-                        'contact_email_verified' => $kycProfile->authorized_email_verified,
-                        'contact_mobile_verified' => $kycProfile->authorized_mobile_verified,
-                        'contact_name_pan_dob_verified' => $kycProfile->authorized_pan_verified,
-                        
-                        'status' => $kycProfile->status,
-                        'completed_at' => $kycProfile->completed_at?->format('Y-m-d H:i:s'),
-                    ];
-                        $application->kyc_details = $kycDetails;
-                    }
-                } catch (Exception $e) {
-                    Log::error('Error loading KYC details: '.$e->getMessage(), [
-                        'user_id' => $userId,
-                        'application_id' => $application->id,
-                        'exception' => $e,
-                    ]);
-                    // Continue without KYC details if there's an error
-                }
-            } elseif (!$application->kyc_details) {
+            if ($application->application_type !== 'IRINN' && ! $application->kyc_details) {
                 // Load for non-IRINN if not already set
                 try {
                     $kycProfile = UserKycProfile::where('user_id', $userId)->latest()->first();
@@ -502,7 +314,7 @@ class ApplicationController extends Controller
 
             // Clear any previous preview/form data from session (unless returning from preview)
             $fromPreview = request()->get('from_preview');
-            if (!$fromPreview) {
+            if (! $fromPreview) {
                 session()->forget(['irin_preview_data', 'irin_form_data']);
             }
 
@@ -534,6 +346,32 @@ class ApplicationController extends Controller
             ->firstOrFail();
 
         $data = $application->application_data ?? [];
+
+        if ($application->hasIrinnNormalizedData()) {
+            $normalizedPrefill = [];
+            foreach ($application->getFillable() as $column) {
+                if (! str_starts_with($column, 'irinn_')) {
+                    continue;
+                }
+                $value = $application->getAttribute($column);
+                if ($value instanceof \DateTimeInterface) {
+                    $normalizedPrefill[$column] = $value->format('Y-m-d');
+                } elseif (is_bool($value)) {
+                    $normalizedPrefill[$column] = $value;
+                } else {
+                    $normalizedPrefill[$column] = $value;
+                }
+            }
+
+            return view('user.applications.irin.create-new', [
+                'user' => $user,
+                'application' => $application,
+                'isNormalizedResubmission' => true,
+                'irinnNormalizedPrefill' => $normalizedPrefill,
+                'resubmissionReason' => $data['irinn_resubmission_reason'] ?? '',
+            ]);
+        }
+
         $part1 = $data['part1'] ?? [];
         $part2 = $data['part2'] ?? [];
         $part3 = $data['part3'] ?? [];
@@ -580,6 +418,12 @@ class ApplicationController extends Controller
             ->where('application_type', 'IRINN')
             ->where('status', 'resubmission_requested')
             ->firstOrFail();
+
+        if ($application->hasIrinnNormalizedData()) {
+            return redirect()
+                ->route('user.applications.irin.resubmit', $application->id)
+                ->with('info', 'Please complete your updates using the IRINN application form and submit from there.');
+        }
 
         $existingData = $application->application_data ?? [];
         $part3 = $existingData['part3'] ?? [];
@@ -674,25 +518,32 @@ class ApplicationController extends Controller
             }
         }
 
+        $restoreStage = isset($existingData['irinn_previous_stage']) && is_string($existingData['irinn_previous_stage'])
+            ? trim($existingData['irinn_previous_stage'])
+            : null;
+        $allowedRestoreStages = ['helpdesk', 'submitted', 'pending', 'hostmaster'];
+        $targetStatus = in_array($restoreStage, $allowedRestoreStages, true) ? $restoreStage : 'helpdesk';
+
         // Remove resubmission metadata
         unset($applicationData['irinn_resubmission_reason'], $applicationData['irinn_resubmission_requested_at'], $applicationData['irinn_resubmission_requested_by'], $applicationData['irinn_previous_stage']);
 
         $application->update([
-            'status' => 'helpdesk',
+            'status' => $targetStatus,
             'application_data' => $applicationData,
+            'irinn_current_stage' => $targetStatus,
         ]);
 
         ApplicationStatusHistory::log(
             $application->id,
             'resubmission_requested',
-            'helpdesk',
+            $targetStatus,
             'user',
             $userId,
-            'IRINN application resubmitted by user after admin request'
+            'IRINN application resubmitted by user; returned to '.$targetStatus.' stage'
         );
 
         return redirect()->route('user.applications.show', $application->id)
-            ->with('success', 'Application resubmitted successfully. No payment required. It is now back with Helpdesk for review.');
+            ->with('success', 'Application resubmitted successfully. No payment required. It has been returned to '.ucfirst($targetStatus).' for review.');
     }
 
     /**
@@ -749,32 +600,97 @@ class ApplicationController extends Controller
 
             // Get user's KYC profile for prefilling
             $kyc = UserKycProfile::where('user_id', $userId)->latest()->first();
-            
+
             // Get GST verification if available
             $gstVerification = null;
             if ($kyc && $kyc->gst_verification_id) {
                 $gstVerification = GstVerification::find($kyc->gst_verification_id);
             }
 
+            $draftIrinn = Application::query()
+                ->where('user_id', $userId)
+                ->where('application_type', 'IRINN')
+                ->latest('updated_at')
+                ->first();
+
+            $companyName = $draftIrinn?->irinn_organisation_name
+                ?? $draftIrinn?->irinn_billing_legal_name
+                ?? ($gstVerification ? ($gstVerification->legal_name ?? $gstVerification->trade_name) : null)
+                ?? $user->fullname;
+
+            $postalRaw = '';
+            if ($draftIrinn !== null) {
+                $postalRaw = trim(implode("\n", array_filter([
+                    $draftIrinn->irinn_organisation_address,
+                    $draftIrinn->irinn_organisation_postcode !== null && $draftIrinn->irinn_organisation_postcode !== ''
+                        ? 'PIN: '.$draftIrinn->irinn_organisation_postcode
+                        : null,
+                ])));
+                if ($postalRaw === '') {
+                    $postalRaw = trim(implode("\n", array_filter([
+                        $draftIrinn->irinn_billing_address,
+                        $draftIrinn->irinn_billing_postcode !== null && $draftIrinn->irinn_billing_postcode !== ''
+                            ? 'PIN: '.$draftIrinn->irinn_billing_postcode
+                            : null,
+                    ])));
+                }
+            }
+            if ($postalRaw === '') {
+                $postalRaw = (string) ($gstVerification?->primary_address ?? $kyc?->billing_address ?? '');
+            }
+
+            $postalLines = preg_split('/\r\n|\r|\n/', $postalRaw) ?: [];
+            $postalLines = array_values(array_filter(array_map('trim', $postalLines), fn (string $l): bool => $l !== ''));
+            if ($postalLines === []) {
+                $postalLines = ['—'];
+            }
+            while (count($postalLines) < 3) {
+                $postalLines[] = '';
+            }
+            $postalLines = array_slice($postalLines, 0, 3);
+
+            $emailPrimary = $draftIrinn?->irinn_mr_email
+                ?? $kyc?->authorized_email
+                ?? $kyc?->contact_email
+                ?? $user->email
+                ?? '';
+            $emailSecondary = (string) ($kyc?->billing_person_email ?? '');
+            if ($emailSecondary === $emailPrimary) {
+                $emailSecondary = '';
+            }
+
+            $irinnAccountName = ($draftIrinn && filled((string) $draftIrinn->irinn_account_name))
+                ? (string) $draftIrinn->irinn_account_name
+                : '';
+
             // Prepare data for PDF
             $data = [
                 'user' => $user,
                 'kyc' => $kyc,
                 'gst_verification' => $gstVerification,
-                'company_name' => $gstVerification->legal_name ?? $gstVerification->trade_name ?? $user->fullname,
-                'company_address' => $gstVerification->primary_address ?? $kyc->billing_address ?? '',
-                'gstin' => $kyc->gstin ?? $gstVerification->gstin ?? '',
-                'pan' => $gstVerification->pan ?? $user->pancardno ?? '',
-                'authorized_name' => $kyc->authorized_name ?? $kyc->contact_name ?? '',
-                'authorized_email' => $kyc->authorized_email ?? $kyc->contact_email ?? '',
-                'authorized_mobile' => $kyc->authorized_mobile ?? $kyc->contact_mobile ?? '',
-                'authorized_pan' => $kyc->authorized_pan ?? $kyc->contact_pan ?? '',
+                'company_name' => $companyName,
+                'company_address' => $postalRaw,
+                'address_line_1' => $postalLines[0] ?? '',
+                'address_line_2' => $postalLines[1] ?? '',
+                'address_line_3' => $postalLines[2] ?? '',
+                'email_line_1' => $emailPrimary,
+                'email_line_2' => $emailSecondary,
+                'irinn_account_name' => $irinnAccountName,
+                'gstin' => $kyc?->gstin ?? $gstVerification?->gstin ?? '',
+                'pan' => $gstVerification?->pan ?? $user->pancardno ?? '',
+                'authorized_name' => $kyc?->authorized_name ?? $kyc?->contact_name ?? '',
+                'authorized_email' => $kyc?->authorized_email ?? $kyc?->contact_email ?? '',
+                'authorized_mobile' => $kyc?->authorized_mobile ?? $kyc?->contact_mobile ?? '',
+                'authorized_pan' => $kyc?->authorized_pan ?? $kyc?->contact_pan ?? '',
+                'signatory_rep_name' => $draftIrinn?->irinn_mr_name ?? $kyc?->authorized_name ?? $kyc?->contact_name ?? '',
+                'signatory_rep_title' => $draftIrinn?->irinn_mr_designation ?? '',
                 'date' => now('Asia/Kolkata')->format('d F Y'),
+                'generated_at_short' => now('Asia/Kolkata')->format('d M Y'),
             ];
 
             $pdf = Pdf::loadView('user.applications.irin.pdf.agreement', $data);
-            
-            return $pdf->download('IRINN-Agreement-'.now('Asia/Kolkata')->format('Y-m-d').'.pdf');
+
+            return $pdf->download('Standard-IRINN-Affiliation-Agreement-'.now('Asia/Kolkata')->format('Y-m-d').'.pdf');
         } catch (Exception $e) {
             Log::error('Error generating IRINN agreement PDF: '.$e->getMessage());
 
@@ -1292,17 +1208,20 @@ class ApplicationController extends Controller
                 $affiliateIdentity = $this->mapConstitutionToAffiliateIdentity($verification->constitution_of_business);
                 $affiliateIdentityDisplay = $this->getAffiliateIdentityDisplayName($affiliateIdentity);
 
+                $principalAddr = $sourceOutput['principal_place_of_business_fields']['principal_place_of_business_address'] ?? [];
+                $gstPostcode = is_array($principalAddr) ? ($principalAddr['pincode'] ?? null) : null;
+
                 $responseData['verification_data'] = [
                     'gstin' => $verification->gstin,
                     'legal_name' => $verification->legal_name,
                     'trade_name' => $verification->trade_name,
                     'company_name' => $verification->legal_name ?? $verification->trade_name,
                     'pan' => $verification->pan,
-                    'state' => $verification->state,
                     'registration_date' => $verification->registration_date?->format('Y-m-d'),
                     'gst_type' => $verification->gst_type,
                     'company_status' => $verification->company_status,
                     'primary_address' => $verification->primary_address,
+                    'postcode' => $gstPostcode,
                     'constitution_of_business' => $verification->constitution_of_business,
                     'affiliate_identity' => $affiliateIdentity,
                     'affiliate_identity_display' => $affiliateIdentityDisplay,
@@ -1314,8 +1233,10 @@ class ApplicationController extends Controller
             if ($type === 'udyam' && $isVerified && $verification && isset($sourceOutput)) {
                 $officialAddress = $sourceOutput['official_address'] ?? null;
                 $primaryAddress = null;
+                $udyamPostcode = null;
 
                 if (is_array($officialAddress)) {
+                    $udyamPostcode = $officialAddress['pin'] ?? null;
                     $addressParts = array_filter([
                         $officialAddress['door'] ?? null,
                         $officialAddress['name_of_premises'] ?? null,
@@ -1324,7 +1245,6 @@ class ApplicationController extends Controller
                         $officialAddress['city'] ?? null,
                         $officialAddress['district'] ?? null,
                         $officialAddress['state'] ?? null,
-                        $officialAddress['pin'] ?? null,
                     ]);
                     $primaryAddress = implode(', ', $addressParts);
                 }
@@ -1335,6 +1255,7 @@ class ApplicationController extends Controller
                     'uam_number' => $verification->uam_number,
                     'company_name' => $companyName,
                     'primary_address' => $primaryAddress,
+                    'postcode' => $udyamPostcode,
                     'source_output' => $sourceOutput,
                 ];
             }
@@ -1343,11 +1264,20 @@ class ApplicationController extends Controller
             if ($type === 'mca' && $isVerified && $verification && isset($sourceOutput)) {
                 $companyName = $sourceOutput['company_name'] ?? null;
                 $registeredAddress = $sourceOutput['registered_address'] ?? null;
+                $mcaPostcode = $sourceOutput['pincode'] ?? $sourceOutput['pin_code'] ?? null;
+                if (! $mcaPostcode && is_string($registeredAddress) && preg_match('/\b(\d{6})\b/', $registeredAddress, $m)) {
+                    $mcaPostcode = $m[1];
+                }
+
+                $directors = $sourceOutput['directors'] ?? [];
+                $directors = is_array($directors) ? $directors : [];
 
                 $responseData['verification_data'] = [
                     'cin' => $verification->cin,
                     'company_name' => $companyName,
                     'primary_address' => $registeredAddress,
+                    'postcode' => $mcaPostcode,
+                    'directors' => $directors,
                     'source_output' => $sourceOutput,
                 ];
             }
@@ -1764,6 +1694,14 @@ class ApplicationController extends Controller
                 ], 403);
             }
 
+            if ($request->boolean('irinn_normalized_flow')) {
+                if ($request->filled('irinn_resubmit_application_id')) {
+                    return $this->storeIrinnNormalizedResubmissionAttempt($request, $userId, $user);
+                }
+
+                return $this->storeIrinnNormalizedApplication($request, $userId, $user);
+            }
+
             // Check if this is payment for existing draft application
             $existingApplicationId = $request->input('application_id');
             if ($existingApplicationId) {
@@ -1772,15 +1710,15 @@ class ApplicationController extends Controller
                     ->where('application_type', 'IRINN')
                     ->where('status', 'draft')
                     ->first();
-                
+
                 if ($existingApplication) {
                     // Initiate payment for existing draft
                     $paymentData = $existingApplication->application_data['part5'] ?? null;
                     $totalAmount = (float) ($paymentData['total_amount'] ?? 1180.00);
-                    
+
                     // Generate transaction ID
                     $transactionId = 'IRINN-'.time().'-'.strtoupper(\Illuminate\Support\Str::random(8));
-                    
+
                     // Create payment transaction
                     $paymentTransaction = PaymentTransaction::create([
                         'user_id' => $userId,
@@ -1792,12 +1730,12 @@ class ApplicationController extends Controller
                         'currency' => 'INR',
                         'product_info' => 'IRINN Application Fee',
                     ]);
-                    
+
                     // Update application data with payment transaction ID
                     $applicationData = $existingApplication->application_data ?? [];
                     $applicationData['part5']['payment_transaction_id'] = $paymentTransaction->id;
                     $existingApplication->update(['application_data' => $applicationData]);
-                    
+
                     // Prepare payment data for PayU
                     $payuService = new \App\Services\PayuService;
                     $paymentData = $payuService->preparePaymentData([
@@ -1833,6 +1771,14 @@ class ApplicationController extends Controller
                 }
             }
 
+            $hasExistingApplication = Application::where('user_id', $userId)->exists();
+            if ($hasExistingApplication) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You can have only one application. Please manage your existing application.',
+                ], 422);
+            }
+
             $action = $request->input('action', 'submit'); // save, preview, submit
 
             // If submitting from preview, restore form data from session
@@ -1842,7 +1788,7 @@ class ApplicationController extends Controller
                 if ($storedFormData) {
                     // Merge stored form data with current request (files won't be in session)
                     foreach ($storedFormData as $key => $value) {
-                        if (!$request->has($key) && !$request->hasFile($key)) {
+                        if (! $request->has($key) && ! $request->hasFile($key)) {
                             $request->merge([$key => $value]);
                         }
                     }
@@ -1862,19 +1808,19 @@ class ApplicationController extends Controller
                 'ipv4_prefix' => ($action === 'preview' || $submitFromPreview ? 'nullable' : 'required_without:ipv6_prefix').'|nullable|string|in:/24,/23',
                 'ipv6_prefix' => ($action === 'preview' || $submitFromPreview ? 'nullable' : 'required_without:ipv4_prefix').'|nullable|string|in:/48,/32',
                 'asn_required' => ($action === 'preview' || $submitFromPreview ? 'nullable' : 'required').'|string|in:yes,no',
-                'board_resolution_file' => ($action === 'submit' && !$submitFromPreview) ? 'required|file|mimes:pdf,jpeg,png,jpg|max:10240' : 'nullable|file|mimes:pdf,jpeg,png,jpg|max:10240',
-                'irinn_agreement_file' => ($action === 'submit' && !$submitFromPreview) ? 'required|file|mimes:pdf,jpeg,png,jpg|max:10240' : 'nullable|file|mimes:pdf,jpeg,png,jpg|max:10240',
-                'network_diagram_file' => ($action === 'submit' && !$submitFromPreview) ? 'required|file|mimes:pdf,jpeg,png,jpg|max:10240' : 'nullable|file|mimes:pdf,jpeg,png,jpg|max:10240',
-                'equipment_invoice_file' => ($action === 'submit' && !$submitFromPreview) ? 'required|file|mimes:pdf,jpeg,png,jpg|max:10240' : 'nullable|file|mimes:pdf,jpeg,png,jpg|max:10240',
-                'bandwidth_invoice_file' => ($action === 'submit' && !$submitFromPreview) ? 'required|array' : 'nullable|array',
+                'board_resolution_file' => ($action === 'submit' && ! $submitFromPreview) ? 'required|file|mimes:pdf,jpeg,png,jpg|max:10240' : 'nullable|file|mimes:pdf,jpeg,png,jpg|max:10240',
+                'irinn_agreement_file' => ($action === 'submit' && ! $submitFromPreview) ? 'required|file|mimes:pdf,jpeg,png,jpg|max:10240' : 'nullable|file|mimes:pdf,jpeg,png,jpg|max:10240',
+                'network_diagram_file' => ($action === 'submit' && ! $submitFromPreview) ? 'required|file|mimes:pdf,jpeg,png,jpg|max:10240' : 'nullable|file|mimes:pdf,jpeg,png,jpg|max:10240',
+                'equipment_invoice_file' => ($action === 'submit' && ! $submitFromPreview) ? 'required|file|mimes:pdf,jpeg,png,jpg|max:10240' : 'nullable|file|mimes:pdf,jpeg,png,jpg|max:10240',
+                'bandwidth_invoice_file' => ($action === 'submit' && ! $submitFromPreview) ? 'required|array' : 'nullable|array',
                 'bandwidth_invoice_file.*' => 'file|mimes:pdf,jpeg,png,jpg|max:10240',
-                'bandwidth_agreement_file' => ($action === 'submit' && !$submitFromPreview) ? 'required|file|mimes:pdf,jpeg,png,jpg|max:10240' : 'nullable|file|mimes:pdf,jpeg,png,jpg|max:10240',
-                'upstream_name' => ($action === 'submit' && !$submitFromPreview) ? 'required|string|max:255' : 'nullable|string|max:255',
-                'upstream_mobile' => ($action === 'submit' && !$submitFromPreview) ? 'required|string|size:10|regex:/^[0-9]{10}$/' : 'nullable|string|max:20',
-                'upstream_email' => ($action === 'submit' && !$submitFromPreview) ? 'required|email|max:255' : 'nullable|email|max:255',
-                'upstream_org_name' => ($action === 'submit' && !$submitFromPreview) ? 'required|string|max:255' : 'nullable|string|max:255',
-                'upstream_asn_details' => ($action === 'submit' && !$submitFromPreview) ? 'required|string|max:255' : 'nullable|string|max:255',
-                'payment_declaration' => ($action === 'submit' && !$submitFromPreview) ? 'required|accepted' : 'nullable',
+                'bandwidth_agreement_file' => ($action === 'submit' && ! $submitFromPreview) ? 'required|file|mimes:pdf,jpeg,png,jpg|max:10240' : 'nullable|file|mimes:pdf,jpeg,png,jpg|max:10240',
+                'upstream_name' => ($action === 'submit' && ! $submitFromPreview) ? 'required|string|max:255' : 'nullable|string|max:255',
+                'upstream_mobile' => ($action === 'submit' && ! $submitFromPreview) ? 'required|string|size:10|regex:/^[0-9]{10}$/' : 'nullable|string|max:20',
+                'upstream_email' => ($action === 'submit' && ! $submitFromPreview) ? 'required|email|max:255' : 'nullable|email|max:255',
+                'upstream_org_name' => ($action === 'submit' && ! $submitFromPreview) ? 'required|string|max:255' : 'nullable|string|max:255',
+                'upstream_asn_details' => ($action === 'submit' && ! $submitFromPreview) ? 'required|string|max:255' : 'nullable|string|max:255',
+                'payment_declaration' => ($action === 'submit' && ! $submitFromPreview) ? 'required|accepted' : 'nullable',
             ];
 
             $messages = [
@@ -1921,7 +1867,7 @@ class ApplicationController extends Controller
                         $bandwidthFiles[] = $path;
                     }
                 }
-                if (!empty($bandwidthFiles)) {
+                if (! empty($bandwidthFiles)) {
                     $filePaths['bandwidth_invoice_file'] = $bandwidthFiles;
                 }
             }
@@ -1996,6 +1942,7 @@ class ApplicationController extends Controller
                     'bandwidth_invoice_file', 'bandwidth_agreement_file',
                 ];
                 session(['irin_form_data' => $request->except($fileKeys)]);
+
                 return response()->json([
                     'success' => true,
                     'redirect_url' => route('user.applications.irin.preview'),
@@ -2012,6 +1959,30 @@ class ApplicationController extends Controller
                 'application_data' => $applicationData,
                 'submitted_at' => null, // Will be set after payment
             ]);
+
+            if ($request->boolean('skip_payment')) {
+                $applicationData['part5']['application_fee'] = 0;
+                $applicationData['part5']['gst_percentage'] = 0;
+                $applicationData['part5']['gst_amount'] = 0;
+                $applicationData['part5']['total_amount'] = 0;
+                $applicationData['part5']['payment_status'] = 'not_required';
+                $application->update([
+                    'status' => 'submitted',
+                    'submitted_at' => now(),
+                    'application_data' => $applicationData,
+                ]);
+
+                if ($submitFromPreview) {
+                    session()->forget(['irin_preview_data', 'irin_form_data']);
+                }
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Application submitted successfully.',
+                    'application_id' => $application->application_id,
+                    'redirect_url' => route('user.applications.show', $application->id),
+                ]);
+            }
 
             // Calculate application fee (Rs. 1000 + GST)
             $applicationFee = 1000.00;
@@ -2085,9 +2056,10 @@ class ApplicationController extends Controller
 
         } catch (\Illuminate\Validation\ValidationException $e) {
             Log::error('IRINN Application Validation Error: '.json_encode($e->errors()));
+
             return response()->json([
                 'success' => false,
-                'message' => 'Validation failed: '.implode(', ', array_map(function($errors) {
+                'message' => 'Validation failed: '.implode(', ', array_map(function ($errors) {
                     return implode(', ', $errors);
                 }, $e->errors())),
                 'errors' => $e->errors(),
@@ -2199,137 +2171,179 @@ class ApplicationController extends Controller
     }
 
     /**
-     * Handle PayU payment success callback for IRINN.
+     * Handle PayU payment success callback for IRINN (application fee or invoice / bulk payment).
      */
-    public function paymentSuccess(Request $request)
+    public function paymentSuccess(Request $request): RedirectResponse
     {
         try {
-            $payuService = new \App\Services\PayuService;
-            $response = $payuService->verifyPayment($request->all());
+            $payuService = new PayuService;
+            $verified = $payuService->verifyPayment($request->all());
 
-            if ($response['success']) {
-                $transactionId = $request->input('txnid');
-                $paymentTransaction = PaymentTransaction::where('transaction_id', $transactionId)->first();
+            $processor = app(PayuGatewayPaymentProcessor::class);
+            $payuResponseFields = $processor->extractPayuResponseFields($request);
 
-                if ($paymentTransaction) {
-                    $application = Application::find($paymentTransaction->application_id);
-                    if ($application && $application->application_type === 'IRINN') {
-                        // Update payment status
-                        $paymentTransaction->update([
-                            'payment_status' => 'success',
-                            'payment_id' => $request->input('mihpayid'),
-                            'response_message' => 'Payment successful',
-                        ]);
+            $rawUdf3 = $payuResponseFields['udf3'] ?? null;
+            $isApplicationFeeMarker = $rawUdf3 === null || $rawUdf3 === '' || strtoupper((string) $rawUdf3) === 'IRINN';
+            $isInvoicePayment = $rawUdf3 !== null && $rawUdf3 !== '' && ! $isApplicationFeeMarker;
 
-                        // Update application data with payment info
-                        $applicationData = $application->application_data ?? [];
-                        $applicationData['part5']['payment_status'] = 'success';
-                        $applicationData['part5']['payment_id'] = $request->input('mihpayid');
-                        $applicationData['part5']['paid_at'] = now('Asia/Kolkata')->toDateTimeString();
+            $invoicesTarget = route('user.invoices.index', [], false);
+            $applicationsTarget = route('user.applications.index', [], false);
 
-                        // Update application status to helpdesk (submitted; new workflow: helpdesk -> hostmaster -> billing)
-                        $application->update([
-                            'status' => 'helpdesk',
-                            'submitted_at' => now('Asia/Kolkata'),
-                            'application_data' => $applicationData,
-                        ]);
+            if ($verified['success']) {
+                $paymentTransaction = $processor->resolvePaymentTransaction($payuResponseFields);
 
-                        $target = route('user.applications.index', [], false);
-                        if (! session('user_id')) {
-                            return redirect()->route('user.login-from-cookie', [
-                                'redirect' => $target,
-                                'success' => urlencode('Payment successful! Your IRINN application has been submitted.'),
-                            ]);
-                        }
+                if (! $paymentTransaction) {
+                    Log::error('IRINN payment success: payment transaction not found', [
+                        'txnid' => $payuResponseFields['txnid'] ?? null,
+                    ]);
 
-                        return redirect($target)
-                            ->with('success', 'Payment successful! Your IRINN application has been submitted.');
-                    }
+                    return $this->redirectAfterIrinnPayuReturn(
+                        $isInvoicePayment ? $invoicesTarget : $applicationsTarget,
+                        null,
+                        'Payment record not found. Please contact support if money was debited.'
+                    );
                 }
+
+                $paymentStatus = $processor->normalizePaymentStatus((string) ($payuResponseFields['status'] ?? ''));
+                $processor->processAfterGatewayResponse(
+                    $request,
+                    $paymentTransaction,
+                    $payuResponseFields,
+                    $paymentStatus,
+                    'browser_return'
+                );
+
+                $target = $isInvoicePayment ? $invoicesTarget : $applicationsTarget;
+                $message = $isInvoicePayment
+                    ? 'Payment successful! Your invoice has been updated.'
+                    : 'Payment successful! Your IRINN application has been submitted.';
+
+                return $this->redirectAfterIrinnPayuReturn($target, $message, null);
             }
 
-            $target = route('user.applications.index', [], false);
-            if (! session('user_id')) {
-                return redirect()->route('user.login-from-cookie', [
-                    'redirect' => $target,
-                    'error' => urlencode('Payment verification failed. Please contact support.'),
-                ]);
-            }
-            return redirect($target)->with('error', 'Payment verification failed. Please contact support.');
+            return $this->redirectAfterIrinnPayuReturn(
+                $isInvoicePayment ? $invoicesTarget : $applicationsTarget,
+                null,
+                $verified['message'] ?: 'Payment verification failed. Please contact support.'
+            );
         } catch (Exception $e) {
             Log::error('IRINN Payment Success Error: '.$e->getMessage());
 
-            $target = route('user.applications.index', [], false);
-            if (! session('user_id')) {
-                return redirect()->route('user.login-from-cookie', [
-                    'redirect' => $target,
-                    'error' => urlencode('Error processing payment. Please contact support.'),
-                ]);
-            }
-            return redirect($target)->with('error', 'Error processing payment. Please contact support.');
+            return $this->redirectAfterIrinnPayuReturn(
+                route('user.applications.index', [], false),
+                null,
+                'Error processing payment. Please contact support.'
+            );
         }
     }
 
     /**
-     * Handle PayU payment failure callback for IRINN.
+     * Restore session via login-from-cookie when PayU drops the Laravel session on return.
      */
-    public function paymentFailure(Request $request)
+    private function redirectAfterIrinnPayuReturn(string $relativeTarget, ?string $success, ?string $error): RedirectResponse
+    {
+        if (! session('user_id')) {
+            $params = ['redirect' => $relativeTarget];
+            if ($success !== null && $success !== '') {
+                $params['success'] = urlencode($success);
+            }
+            if ($error !== null && $error !== '') {
+                $params['error'] = urlencode($error);
+            }
+
+            return redirect()->route('user.login-from-cookie', $params);
+        }
+
+        $redirect = redirect($relativeTarget);
+        if ($success !== null && $success !== '') {
+            $redirect->with('success', $success);
+        }
+        if ($error !== null && $error !== '') {
+            $redirect->with('error', $error);
+        }
+
+        return $redirect;
+    }
+
+    /**
+     * Handle PayU payment failure callback for IRINN (application fee or invoice payment).
+     */
+    public function paymentFailure(Request $request): RedirectResponse
     {
         try {
+            $processor = app(PayuGatewayPaymentProcessor::class);
+            $payuResponseFields = $processor->extractPayuResponseFields($request);
+
+            $rawUdf3 = $payuResponseFields['udf3'] ?? null;
+            $isApplicationFeeMarker = $rawUdf3 === null || $rawUdf3 === '' || strtoupper((string) $rawUdf3) === 'IRINN';
+            $isInvoicePayment = $rawUdf3 !== null && $rawUdf3 !== '' && ! $isApplicationFeeMarker;
+
             $transactionId = $request->input('txnid');
-            $paymentTransaction = PaymentTransaction::where('transaction_id', $transactionId)->first();
+            $paymentTransaction = $transactionId
+                ? PaymentTransaction::where('transaction_id', $transactionId)->first()
+                : null;
+
+            if ($isInvoicePayment && $paymentTransaction) {
+                $paymentStatus = $processor->normalizePaymentStatus((string) ($payuResponseFields['status'] ?? ''));
+                if ($paymentStatus === 'pending') {
+                    $paymentStatus = 'failed';
+                }
+                $processor->processAfterGatewayResponse(
+                    $request,
+                    $paymentTransaction,
+                    $payuResponseFields,
+                    $paymentStatus,
+                    'browser_return_failure'
+                );
+
+                return $this->redirectAfterIrinnPayuReturn(
+                    route('user.invoices.index', [], false),
+                    null,
+                    'Payment failed or was cancelled. You can try again from your invoices.'
+                );
+            }
 
             if ($paymentTransaction) {
                 $application = Application::find($paymentTransaction->application_id);
-                
+
                 if ($application && $application->application_type === 'IRINN') {
-                    // Update payment transaction
                     $paymentTransaction->update([
                         'payment_status' => 'failed',
                         'response_message' => $request->input('error') ?? 'Payment failed',
                     ]);
 
-                    // Save application as draft with pending payment
                     $applicationData = $application->application_data ?? [];
                     $applicationData['part5']['payment_status'] = 'pending';
                     $applicationData['part5']['payment_transaction_id'] = $paymentTransaction->id;
-                    
+
                     $application->update([
                         'status' => 'draft',
                         'application_data' => $applicationData,
                     ]);
 
                     $target = route('user.applications.show', $application->id, false);
-                    if (! session('user_id')) {
-                        return redirect()->route('user.login-from-cookie', [
-                            'redirect' => $target,
-                            'error' => urlencode('Payment failed. Your application has been saved as draft. You can pay later from the application details page.'),
-                        ]);
-                    }
-                    return redirect($target)
-                        ->with('error', 'Payment failed. Your application has been saved as draft. You can pay later from the application details page.');
+
+                    return $this->redirectAfterIrinnPayuReturn(
+                        $target,
+                        null,
+                        'Payment failed. Your application has been saved as draft. You can pay later from the application details page.'
+                    );
                 }
             }
 
-            $target = route('user.applications.index', [], false);
-            if (! session('user_id')) {
-                return redirect()->route('user.login-from-cookie', [
-                    'redirect' => $target,
-                    'error' => urlencode('Payment failed. Please try again or contact support.'),
-                ]);
-            }
-            return redirect($target)->with('error', 'Payment failed. Please try again or contact support.');
+            return $this->redirectAfterIrinnPayuReturn(
+                route('user.applications.index', [], false),
+                null,
+                'Payment failed. Please try again or contact support.'
+            );
         } catch (Exception $e) {
             Log::error('IRINN Payment Failure Error: '.$e->getMessage());
 
-            $target = route('user.applications.index', [], false);
-            if (! session('user_id')) {
-                return redirect()->route('user.login-from-cookie', [
-                    'redirect' => $target,
-                    'error' => urlencode('Error processing payment failure. Please contact support.'),
-                ]);
-            }
-            return redirect($target)->with('error', 'Error processing payment failure. Please contact support.');
+            return $this->redirectAfterIrinnPayuReturn(
+                route('user.applications.index', [], false),
+                null,
+                'Error processing payment failure. Please contact support.'
+            );
         }
     }
 
@@ -2497,11 +2511,6 @@ class ApplicationController extends Controller
                 ->where('user_id', $userId)
                 ->firstOrFail();
 
-            // Redirect to IX-specific route if it's an IX application
-            if ($application->application_type === 'IX') {
-                return redirect()->route('user.applications.ix.download-application-pdf', $id);
-            }
-
             $applicationPdf = $this->generateApplicationPdf($application);
 
             return $applicationPdf->download($application->application_id.'_application.pdf');
@@ -2556,34 +2565,23 @@ class ApplicationController extends Controller
             $applicationData = $application->application_data ?? [];
             $filePath = null;
 
-            // Handle IRINN application documents (stored in part3 and part4)
-            if ($application->application_type === 'IRINN') {
-                // Check part3 documents
-                if (isset($applicationData['part3'][$documentKey])) {
-                    $filePath = $applicationData['part3'][$documentKey];
-                }
-                // Check part4 documents
-                elseif (isset($applicationData['part4'][$documentKey])) {
-                    $filePath = $applicationData['part4'][$documentKey];
-                    // Handle bandwidth_invoice_file which is an array
-                    if ($documentKey === 'bandwidth_invoice_file' && is_array($filePath)) {
-                        $fileIndex = $request->input('index', 0);
-                        if (isset($filePath[$fileIndex])) {
-                            $filePath = $filePath[$fileIndex];
-                        } else {
-                            abort(404, 'Document index not found.');
-                        }
-                    }
-                }
-            } else {
-                // Handle IX application documents (stored in documents and pdfs)
-                $documents = $applicationData['documents'] ?? [];
-                $pdfs = $applicationData['pdfs'] ?? [];
+            if ($application->application_type !== 'IRINN') {
+                abort(404, 'Application not found.');
+            }
 
-                if (isset($pdfs[$documentKey])) {
-                    $filePath = $pdfs[$documentKey];
-                } elseif (isset($documents[$documentKey])) {
-                    $filePath = $documents[$documentKey];
+            if (Application::isIrinnStoredPathDocumentKey($documentKey)) {
+                $filePath = $application->getAttribute($documentKey);
+            } elseif (isset($applicationData['part3'][$documentKey])) {
+                $filePath = $applicationData['part3'][$documentKey];
+            } elseif (isset($applicationData['part4'][$documentKey])) {
+                $filePath = $applicationData['part4'][$documentKey];
+                if ($documentKey === 'bandwidth_invoice_file' && is_array($filePath)) {
+                    $fileIndex = $request->input('index', 0);
+                    if (isset($filePath[$fileIndex])) {
+                        $filePath = $filePath[$fileIndex];
+                    } else {
+                        abort(404, 'Document index not found.');
+                    }
                 }
             }
 
@@ -2771,7 +2769,7 @@ class ApplicationController extends Controller
 
             // Add other form fields to application data
             $allData = $request->except(['action', '_token', 'use_wallet_payment']);
-            
+
             // Handle file uploads (same as storeIrinNew)
             $filePaths = [];
             $fileFields = [
@@ -2807,7 +2805,7 @@ class ApplicationController extends Controller
                         $bandwidthFiles[] = $path;
                     }
                 }
-                if (!empty($bandwidthFiles)) {
+                if (! empty($bandwidthFiles)) {
                     $filePaths['bandwidth_invoice_file'] = $bandwidthFiles;
                 }
             }
@@ -2832,12 +2830,12 @@ class ApplicationController extends Controller
                     'asn_details' => $request->input('upstream_asn_details'),
                 ],
             ];
-            
+
             // Add Part 5: Payment
             $applicationData['part5'] = [
                 'payment_declaration' => $request->input('payment_declaration', false),
             ];
-            
+
             // Add form version
             $applicationData['form_version'] = 'new';
 
@@ -3083,5 +3081,406 @@ class ApplicationController extends Controller
             return redirect()->route('user.applications.show', $id)
                 ->with('error', 'Unable to process wallet payment. Please try again.');
         }
+    }
+
+    /**
+     * Persist IRINN application from the multi-step create-new flow (normalized columns, no JSON blob).
+     */
+    protected function storeIrinnNormalizedApplication(Request $request, int $userId, Registration $user): JsonResponse
+    {
+        try {
+            return $this->storeIrinnNormalizedApplicationAttempt($request, $userId, $user);
+        } catch (Exception $e) {
+            Log::error('IRINN normalized application error: '.$e->getMessage().' | '.$e->getTraceAsString());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Application submission failed. Please try again.',
+            ], 500);
+        }
+    }
+
+    protected function storeIrinnNormalizedApplicationAttempt(Request $request, int $userId, Registration $user): JsonResponse
+    {
+        if (Application::where('user_id', $userId)->exists()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You can have only one application. Please manage your existing application.',
+            ], 422);
+        }
+
+        $irinnRequest = StoreIrinNewFlowRequest::createFrom($request);
+        $irinnRequest->setContainer(app())->setRedirector(app('redirect'));
+
+        $validator = Validator::make(
+            $irinnRequest->all(),
+            $irinnRequest->rules(),
+            $irinnRequest->messages(),
+            $irinnRequest->attributes()
+        );
+        $irinnRequest->withValidator($validator);
+        $validator->after(function (\Illuminate\Validation\Validator $v) use ($irinnRequest): void {
+            if (! $irinnRequest->filled('irinn_ipv4_resource_size') && ! $irinnRequest->filled('irinn_ipv6_resource_size')) {
+                $v->errors()->add('irinn_ipv4_resource_size', 'Please select at least one IPv4 or IPv6 resource (Step 5).');
+            }
+        });
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => $validator->errors()->first(),
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $baseDir = 'irinn-applications/'.$userId.'/'.date('Y/m');
+
+        $store = function (string $key) use ($request, $baseDir): ?string {
+            if (! $request->hasFile($key)) {
+                return null;
+            }
+
+            $file = $request->file($key);
+
+            return $file?->store($baseDir, 'public');
+        };
+
+        $paths = [
+            'irinn_registration_document_path' => $store('irinn_registration_document'),
+            'irinn_ca_declaration_path' => $store('irinn_ca_declaration_file'),
+            'irinn_signature_proof_path' => $store('irinn_signature_proof'),
+            'irinn_board_resolution_path' => $store('irinn_board_resolution'),
+            'irinn_kyc_network_diagram_path' => $store('irinn_kyc_network_diagram'),
+            'irinn_kyc_equipment_invoice_path' => $store('irinn_kyc_equipment_invoice'),
+            'irinn_kyc_bandwidth_proof_path' => $store('irinn_kyc_bandwidth_proof'),
+            'irinn_kyc_irinn_agreement_path' => $store('irinn_kyc_irinn_agreement'),
+        ];
+
+        $labels = $request->input('kyc_other_document_label', []);
+        $otherFiles = $request->file('kyc_other_document_file', []);
+        if ($otherFiles instanceof \Illuminate\Http\UploadedFile) {
+            $otherFiles = [$otherFiles];
+        }
+        if (! is_array($labels)) {
+            $labels = [];
+        }
+        if (! is_array($otherFiles)) {
+            $otherFiles = [];
+        }
+        for ($i = 1; $i <= 5; $i++) {
+            $idx = $i - 1;
+            $labelKey = "irinn_other_doc_{$i}_label";
+            $pathKey = "irinn_other_doc_{$i}_path";
+            $paths[$labelKey] = isset($labels[$idx]) ? (is_string($labels[$idx]) ? trim($labels[$idx]) : null) : null;
+            $file = $otherFiles[$idx] ?? null;
+            $paths[$pathKey] = ($file && $file->isValid()) ? $file->store($baseDir.'/other', 'public') : null;
+        }
+
+        $gstVerificationId = null;
+        if ($request->filled('gst_verification_request_id')) {
+            $gstVerificationId = GstVerification::query()
+                ->where('user_id', $userId)
+                ->where('request_id', $request->input('gst_verification_request_id'))
+                ->value('id');
+        }
+
+        $mcaVerificationId = null;
+        if ($request->filled('mca_verification_request_id')) {
+            $mcaVerificationId = McaVerification::query()
+                ->where('user_id', $userId)
+                ->where('request_id', $request->input('mca_verification_request_id'))
+                ->value('id');
+        }
+
+        $feeRaw = $request->input('irinn_resource_fee_amount', $request->input('resource_fee_amount'));
+
+        $application = Application::create(array_merge([
+            'user_id' => $userId,
+            'pan_card_no' => $user->pancardno,
+            'application_id' => Application::generateApplicationId(),
+            'application_type' => 'IRINN',
+            'status' => 'helpdesk',
+            'submitted_at' => now(),
+            'application_data' => null,
+            'gst_verification_id' => $gstVerificationId,
+            'mca_verification_id' => $mcaVerificationId,
+            'irinn_form_version' => $request->input('irinn_form_version', 'create_new_v1'),
+            'irinn_current_stage' => 'helpdesk',
+            'irinn_company_type' => $request->input('irinn_company_type'),
+            'irinn_cin_number' => $request->input('irinn_cin_number'),
+            'irinn_udyam_number' => $request->input('irinn_udyam_number'),
+            'irinn_organisation_name' => $request->input('irinn_organisation_name'),
+            'irinn_organisation_address' => $request->input('irinn_organisation_address'),
+            'irinn_organisation_postcode' => $request->input('irinn_organisation_postcode'),
+            'irinn_industry_type' => $request->input('irinn_industry_type'),
+            'irinn_account_name' => $request->input('irinn_account_name'),
+            'irinn_has_gst_number' => $request->has('irinn_has_gst_number'),
+            'irinn_billing_gstin' => $request->input('irinn_billing_gstin'),
+            'irinn_billing_legal_name' => $request->input('irinn_billing_legal_name'),
+            'irinn_billing_pan' => $request->input('irinn_billing_pan'),
+            'irinn_billing_address' => $request->input('irinn_billing_address'),
+            'irinn_billing_postcode' => $request->input('irinn_billing_postcode'),
+            'irinn_mr_name' => $request->input('irinn_mr_name'),
+            'irinn_mr_designation' => $request->input('irinn_mr_designation'),
+            'irinn_mr_email' => $request->input('irinn_mr_email'),
+            'irinn_mr_mobile' => $request->input('irinn_mr_mobile'),
+            'irinn_mr_din' => $request->input('irinn_mr_din'),
+            'irinn_tp_name' => $request->input('irinn_tp_name'),
+            'irinn_tp_designation' => $request->input('irinn_tp_designation'),
+            'irinn_tp_email' => $request->input('irinn_tp_email'),
+            'irinn_tp_mobile' => $request->input('irinn_tp_mobile'),
+            'irinn_abuse_name' => $request->input('irinn_abuse_name'),
+            'irinn_abuse_designation' => $request->input('irinn_abuse_designation'),
+            'irinn_abuse_email' => $request->input('irinn_abuse_email'),
+            'irinn_abuse_mobile' => $request->input('irinn_abuse_mobile'),
+            'irinn_br_name' => $request->input('irinn_br_name'),
+            'irinn_br_designation' => $request->input('irinn_br_designation'),
+            'irinn_br_email' => $request->input('irinn_br_email'),
+            'irinn_br_mobile' => $request->input('irinn_br_mobile'),
+            'irinn_asn_required' => $request->has('irinn_asn_required'),
+            'irinn_ipv4_resource_size' => $request->input('irinn_ipv4_resource_size'),
+            'irinn_ipv4_resource_addresses' => $request->filled('irinn_ipv4_resource_addresses') ? (int) $request->input('irinn_ipv4_resource_addresses') : null,
+            'irinn_ipv6_resource_size' => $request->input('irinn_ipv6_resource_size'),
+            'irinn_ipv6_resource_addresses' => $request->filled('irinn_ipv6_resource_addresses') ? (int) $request->input('irinn_ipv6_resource_addresses') : null,
+            'irinn_resource_fee_amount' => $feeRaw !== null && $feeRaw !== '' ? (float) $feeRaw : null,
+            'irinn_upstream_provider_name' => $request->input('irinn_upstream_provider_name'),
+            'irinn_upstream_as_number' => $request->input('irinn_upstream_as_number'),
+            'irinn_upstream_mobile' => $request->input('irinn_upstream_mobile'),
+            'irinn_upstream_email' => $request->input('irinn_upstream_email'),
+            'irinn_sign_name' => $request->input('irinn_sign_name'),
+            'irinn_sign_dob' => $request->input('irinn_sign_dob'),
+            'irinn_sign_pan' => $request->input('irinn_sign_pan'),
+            'irinn_sign_email' => $request->input('irinn_sign_email'),
+            'irinn_sign_mobile' => $request->input('irinn_sign_mobile'),
+        ], $paths));
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Application submitted successfully.',
+            'application_id' => $application->application_id,
+            'redirect_url' => route('user.applications.show', $application->id),
+        ]);
+    }
+
+    protected function storeIrinnNormalizedResubmissionAttempt(Request $request, int $userId, Registration $user): JsonResponse
+    {
+        $application = Application::query()
+            ->where('id', (int) $request->input('irinn_resubmit_application_id'))
+            ->where('user_id', $userId)
+            ->where('application_type', 'IRINN')
+            ->where('status', 'resubmission_requested')
+            ->first();
+
+        if (! $application || ! $application->hasIrinnNormalizedData()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unable to resubmit this application.',
+            ], 422);
+        }
+
+        $irinnRequest = StoreIrinNewFlowRequest::createFrom($request);
+        $rules = StoreIrinNewFlowRequest::rulesForNormalizedResubmit();
+
+        $validator = Validator::make(
+            $irinnRequest->all(),
+            $rules,
+            $irinnRequest->messages(),
+            $irinnRequest->attributes()
+        );
+
+        $validator->after(function (\Illuminate\Validation\Validator $v) use ($request, $application): void {
+            if (! $request->filled('irinn_ipv4_resource_size') && ! $request->filled('irinn_ipv6_resource_size')) {
+                $v->errors()->add('irinn_ipv4_resource_size', 'Please select at least one IPv4 or IPv6 resource (Step 5).');
+            }
+
+            $requireFileOrPath = function (string $input, string $pathColumn) use ($request, $application, $v): void {
+                if (! $request->hasFile($input) && empty($application->getAttribute($pathColumn))) {
+                    $v->errors()->add($input, 'Please upload this document or keep your previously submitted file.');
+                }
+            };
+
+            $requireFileOrPath('irinn_signature_proof', 'irinn_signature_proof_path');
+            $requireFileOrPath('irinn_board_resolution', 'irinn_board_resolution_path');
+            $requireFileOrPath('irinn_kyc_network_diagram', 'irinn_kyc_network_diagram_path');
+            $requireFileOrPath('irinn_kyc_equipment_invoice', 'irinn_kyc_equipment_invoice_path');
+            $requireFileOrPath('irinn_kyc_bandwidth_proof', 'irinn_kyc_bandwidth_proof_path');
+            $requireFileOrPath('irinn_kyc_irinn_agreement', 'irinn_kyc_irinn_agreement_path');
+
+            $companyType = (string) $request->input('irinn_company_type', '');
+            if (in_array($companyType, ['government', 'ngo', 'academia_institute', 'trust'], true)) {
+                $requireFileOrPath('irinn_registration_document', 'irinn_registration_document_path');
+            }
+
+            if (! $request->has('irinn_has_gst_number')) {
+                $requireFileOrPath('irinn_ca_declaration_file', 'irinn_ca_declaration_path');
+            }
+        });
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => $validator->errors()->first(),
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $baseDir = 'irinn-applications/'.$userId.'/'.date('Y/m');
+
+        $store = function (string $key) use ($request, $baseDir): ?string {
+            if (! $request->hasFile($key)) {
+                return null;
+            }
+
+            $file = $request->file($key);
+
+            return $file?->store($baseDir, 'public');
+        };
+
+        $mergePath = function (?string $newPath, ?string $existingPath): ?string {
+            return $newPath ?: $existingPath;
+        };
+
+        $paths = [
+            'irinn_registration_document_path' => $mergePath($store('irinn_registration_document'), $application->irinn_registration_document_path),
+            'irinn_ca_declaration_path' => $mergePath($store('irinn_ca_declaration_file'), $application->irinn_ca_declaration_path),
+            'irinn_signature_proof_path' => $mergePath($store('irinn_signature_proof'), $application->irinn_signature_proof_path),
+            'irinn_board_resolution_path' => $mergePath($store('irinn_board_resolution'), $application->irinn_board_resolution_path),
+            'irinn_kyc_network_diagram_path' => $mergePath($store('irinn_kyc_network_diagram'), $application->irinn_kyc_network_diagram_path),
+            'irinn_kyc_equipment_invoice_path' => $mergePath($store('irinn_kyc_equipment_invoice'), $application->irinn_kyc_equipment_invoice_path),
+            'irinn_kyc_bandwidth_proof_path' => $mergePath($store('irinn_kyc_bandwidth_proof'), $application->irinn_kyc_bandwidth_proof_path),
+            'irinn_kyc_irinn_agreement_path' => $mergePath($store('irinn_kyc_irinn_agreement'), $application->irinn_kyc_irinn_agreement_path),
+        ];
+
+        $labels = $request->input('kyc_other_document_label', []);
+        $otherFiles = $request->file('kyc_other_document_file', []);
+        if ($otherFiles instanceof \Illuminate\Http\UploadedFile) {
+            $otherFiles = [$otherFiles];
+        }
+        if (! is_array($labels)) {
+            $labels = [];
+        }
+        if (! is_array($otherFiles)) {
+            $otherFiles = [];
+        }
+
+        for ($i = 1; $i <= 5; $i++) {
+            $idx = $i - 1;
+            $labelKey = "irinn_other_doc_{$i}_label";
+            $pathKey = "irinn_other_doc_{$i}_path";
+            $incomingLabel = $labels[$idx] ?? null;
+            if (is_string($incomingLabel) && trim($incomingLabel) !== '') {
+                $paths[$labelKey] = trim($incomingLabel);
+            } else {
+                $paths[$labelKey] = $application->getAttribute($labelKey);
+            }
+            $file = $otherFiles[$idx] ?? null;
+            $paths[$pathKey] = ($file && $file->isValid())
+                ? $file->store($baseDir.'/other', 'public')
+                : $application->getAttribute($pathKey);
+        }
+
+        $gstVerificationId = $application->gst_verification_id;
+        if ($request->filled('gst_verification_request_id')) {
+            $gstVerificationId = GstVerification::query()
+                ->where('user_id', $userId)
+                ->where('request_id', $request->input('gst_verification_request_id'))
+                ->value('id') ?? $gstVerificationId;
+        }
+
+        $mcaVerificationId = $application->mca_verification_id;
+        if ($request->filled('mca_verification_request_id')) {
+            $mcaVerificationId = McaVerification::query()
+                ->where('user_id', $userId)
+                ->where('request_id', $request->input('mca_verification_request_id'))
+                ->value('id') ?? $mcaVerificationId;
+        }
+
+        $feeRaw = $request->input('irinn_resource_fee_amount', $request->input('resource_fee_amount'));
+
+        $applicationData = $application->application_data ?? [];
+        $restoreStage = isset($applicationData['irinn_previous_stage']) && is_string($applicationData['irinn_previous_stage'])
+            ? trim($applicationData['irinn_previous_stage'])
+            : null;
+        $allowedRestoreStages = ['helpdesk', 'submitted', 'pending', 'hostmaster'];
+        $targetStatus = in_array($restoreStage, $allowedRestoreStages, true) ? $restoreStage : 'helpdesk';
+
+        unset(
+            $applicationData['irinn_resubmission_reason'],
+            $applicationData['irinn_resubmission_requested_at'],
+            $applicationData['irinn_resubmission_requested_by'],
+            $applicationData['irinn_previous_stage'],
+        );
+
+        $application->update(array_merge([
+            'status' => $targetStatus,
+            'submitted_at' => now(),
+            'application_data' => empty($applicationData) ? null : $applicationData,
+            'gst_verification_id' => $gstVerificationId,
+            'mca_verification_id' => $mcaVerificationId,
+            'irinn_form_version' => $request->input('irinn_form_version', 'create_new_v1'),
+            'irinn_current_stage' => $targetStatus,
+            'irinn_company_type' => $request->input('irinn_company_type'),
+            'irinn_cin_number' => $request->input('irinn_cin_number'),
+            'irinn_udyam_number' => $request->input('irinn_udyam_number'),
+            'irinn_organisation_name' => $request->input('irinn_organisation_name'),
+            'irinn_organisation_address' => $request->input('irinn_organisation_address'),
+            'irinn_organisation_postcode' => $request->input('irinn_organisation_postcode'),
+            'irinn_industry_type' => $request->input('irinn_industry_type'),
+            'irinn_account_name' => $request->input('irinn_account_name'),
+            'irinn_has_gst_number' => $request->has('irinn_has_gst_number'),
+            'irinn_billing_gstin' => $request->input('irinn_billing_gstin'),
+            'irinn_billing_legal_name' => $request->input('irinn_billing_legal_name'),
+            'irinn_billing_pan' => $request->input('irinn_billing_pan'),
+            'irinn_billing_address' => $request->input('irinn_billing_address'),
+            'irinn_billing_postcode' => $request->input('irinn_billing_postcode'),
+            'irinn_mr_name' => $request->input('irinn_mr_name'),
+            'irinn_mr_designation' => $request->input('irinn_mr_designation'),
+            'irinn_mr_email' => $request->input('irinn_mr_email'),
+            'irinn_mr_mobile' => $request->input('irinn_mr_mobile'),
+            'irinn_mr_din' => $request->input('irinn_mr_din'),
+            'irinn_tp_name' => $request->input('irinn_tp_name'),
+            'irinn_tp_designation' => $request->input('irinn_tp_designation'),
+            'irinn_tp_email' => $request->input('irinn_tp_email'),
+            'irinn_tp_mobile' => $request->input('irinn_tp_mobile'),
+            'irinn_abuse_name' => $request->input('irinn_abuse_name'),
+            'irinn_abuse_designation' => $request->input('irinn_abuse_designation'),
+            'irinn_abuse_email' => $request->input('irinn_abuse_email'),
+            'irinn_abuse_mobile' => $request->input('irinn_abuse_mobile'),
+            'irinn_br_name' => $request->input('irinn_br_name'),
+            'irinn_br_designation' => $request->input('irinn_br_designation'),
+            'irinn_br_email' => $request->input('irinn_br_email'),
+            'irinn_br_mobile' => $request->input('irinn_br_mobile'),
+            'irinn_asn_required' => $request->has('irinn_asn_required'),
+            'irinn_ipv4_resource_size' => $request->input('irinn_ipv4_resource_size'),
+            'irinn_ipv4_resource_addresses' => $request->filled('irinn_ipv4_resource_addresses') ? (int) $request->input('irinn_ipv4_resource_addresses') : null,
+            'irinn_ipv6_resource_size' => $request->input('irinn_ipv6_resource_size'),
+            'irinn_ipv6_resource_addresses' => $request->filled('irinn_ipv6_resource_addresses') ? (int) $request->input('irinn_ipv6_resource_addresses') : null,
+            'irinn_resource_fee_amount' => $feeRaw !== null && $feeRaw !== '' ? (float) $feeRaw : null,
+            'irinn_upstream_provider_name' => $request->input('irinn_upstream_provider_name'),
+            'irinn_upstream_as_number' => $request->input('irinn_upstream_as_number'),
+            'irinn_upstream_mobile' => $request->input('irinn_upstream_mobile'),
+            'irinn_upstream_email' => $request->input('irinn_upstream_email'),
+            'irinn_sign_name' => $request->input('irinn_sign_name'),
+            'irinn_sign_dob' => $request->input('irinn_sign_dob'),
+            'irinn_sign_pan' => $request->input('irinn_sign_pan'),
+            'irinn_sign_email' => $request->input('irinn_sign_email'),
+            'irinn_sign_mobile' => $request->input('irinn_sign_mobile'),
+        ], $paths));
+
+        ApplicationStatusHistory::log(
+            $application->id,
+            'resubmission_requested',
+            $targetStatus,
+            'user',
+            $userId,
+            'IRINN application resubmitted by user; returned to '.$targetStatus.' stage'
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Application updated and resubmitted successfully.',
+            'application_id' => $application->application_id,
+            'redirect_url' => route('user.applications.show', $application->id),
+        ]);
     }
 }

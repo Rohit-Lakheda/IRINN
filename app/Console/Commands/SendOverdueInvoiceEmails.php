@@ -4,7 +4,6 @@ namespace App\Console\Commands;
 
 use App\Mail\OverdueInvoiceMail;
 use App\Models\Invoice;
-use App\Models\IxLocation;
 use App\Models\NodalOfficerEmail;
 use Exception;
 use Illuminate\Console\Command;
@@ -48,6 +47,7 @@ class SendOverdueInvoiceEmails extends Command
 
             // Find overdue invoices (due_date < today, status pending or partial, not cancelled/credit note)
             $query = Invoice::with(['application.user'])
+                ->whereHas('application', fn ($q) => $q->where('application_type', 'IRINN'))
                 ->activeForTotals()
                 ->where(function ($q) {
                     $q->where('status', 'pending')
@@ -207,27 +207,6 @@ class SendOverdueInvoiceEmails extends Command
 
             // Get nodal officer name from application data (already stored when location was selected)
             $nodalOfficerName = $locationData['nodal_officer'] ?? null;
-
-            if (! $nodalOfficerName) {
-                // Try to fetch from IX location if we have location ID
-                $locationId = $locationData['id'] ?? null;
-                if ($locationId) {
-                    $ixLocation = IxLocation::find($locationId);
-                    if ($ixLocation && $ixLocation->nodal_officer) {
-                        $nodalOfficerName = $ixLocation->nodal_officer;
-                    }
-                }
-
-                // If still not found, try to find by location name
-                if (! $nodalOfficerName && isset($locationData['name'])) {
-                    $ixLocation = IxLocation::where('name', $locationData['name'])
-                        ->where('is_active', true)
-                        ->first();
-                    if ($ixLocation && $ixLocation->nodal_officer) {
-                        $nodalOfficerName = $ixLocation->nodal_officer;
-                    }
-                }
-            }
 
             if ($nodalOfficerName) {
                 // First try to get email from database mapping

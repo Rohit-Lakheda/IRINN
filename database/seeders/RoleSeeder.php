@@ -34,53 +34,29 @@ class RoleSeeder extends Seeder
             ],
         ];
 
-        // New IX workflow roles
-        $ixRoles = [
+        // IRINN workflow roles
+        $irinnRoles = [
             [
-                'name' => 'IX Application Processor',
-                'slug' => 'ix_processor',
-                'description' => 'Process IX applications, forward to legal or allow resubmission',
+                'name' => 'IRINN Helpdesk',
+                'slug' => 'helpdesk',
+                'description' => 'First-line IRINN application review and forwarding',
                 'is_active' => true,
             ],
             [
-                'name' => 'IX Legal',
-                'slug' => 'ix_legal',
-                'description' => 'Verify board resolution and agreement, forward to IX head or send back to processor',
+                'name' => 'IRINN Hostmaster',
+                'slug' => 'hostmaster',
+                'description' => 'IRINN technical / hostmaster stage',
                 'is_active' => true,
             ],
             [
-                'name' => 'IX Head',
-                'slug' => 'ix_head',
-                'description' => 'Review and forward to CEO or send back to processor',
-                'is_active' => true,
-            ],
-            [
-                'name' => 'CEO',
-                'slug' => 'ceo',
-                'description' => 'Final approver - approve (forward to Nodal officer) or reject',
-                'is_active' => true,
-            ],
-            [
-                'name' => 'Nodal Officer',
-                'slug' => 'nodal_officer',
-                'description' => 'Assign port capacity, forward to tech team, hold, or send back',
-                'is_active' => true,
-            ],
-            [
-                'name' => 'IX Tech Team',
-                'slug' => 'ix_tech_team',
-                'description' => 'Assign IP and make application live, generate customer ID and membership ID',
-                'is_active' => true,
-            ],
-            [
-                'name' => 'IX Account',
-                'slug' => 'ix_account',
-                'description' => 'Generate invoice and verify payment',
+                'name' => 'IRINN Billing',
+                'slug' => 'billing',
+                'description' => 'IRINN billing, discounts, and annual invoices',
                 'is_active' => true,
             ],
         ];
 
-        $allRoles = array_merge($legacyRoles, $ixRoles);
+        $allRoles = array_merge($legacyRoles, $irinnRoles);
 
         foreach ($allRoles as $roleData) {
             Role::updateOrCreate(

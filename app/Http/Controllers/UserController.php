@@ -18,6 +18,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 
 class UserController extends Controller
 {
@@ -37,16 +38,6 @@ class UserController extends Controller
                     ->with('error', 'User not found. Please login again.');
             }
 
-            // Force KYC completion before accessing dashboard
-            $hasCompletedKyc = UserKycProfile::where('user_id', $userId)
-                ->where('status', 'completed')
-                ->exists();
-
-            if (! $hasCompletedKyc) {
-                return redirect()->route('user.kyc.show')
-                    ->with('info', 'Please complete your KYC before accessing the dashboard.');
-            }
-
             $unreadCount = $user->unreadMessagesCount();
 
             // Get only live applications (is_active = true)
@@ -56,12 +47,6 @@ class UserController extends Controller
                 ->whereNotNull('service_activation_date')
                 ->latest('service_activation_date')
                 ->get();
-
-            // Check if user has any IX application (submitted, approved, or payment_verified)
-            $hasIxApplication = Application::where('user_id', $userId)
-                ->where('application_type', 'IX')
-                ->whereIn('status', ['submitted', 'approved', 'payment_verified', 'processor_forwarded_legal', 'legal_forwarded_head', 'head_forwarded_ceo', 'ceo_approved', 'port_assigned', 'ip_assigned', 'invoice_pending'])
-                ->exists();
 
             // Get invoice statistics
             $invoiceCount = \App\Models\Invoice::whereHas('application', function ($query) use ($userId) {
@@ -124,7 +109,7 @@ class UserController extends Controller
             $wallet = $user->wallet;
             $walletBalance = $wallet ? (float) $wallet->balance : 0;
 
-            return response()->view('user.dashboard', compact('user', 'unreadCount', 'liveApplications', 'hasIxApplication', 'invoiceCount', 'pendingInvoices', 'paidInvoices', 'outstandingAmount', 'pendingInvoicesList', 'gstin', 'gstVerified', 'wallet', 'walletBalance'))
+            return response()->view('user.dashboard', compact('user', 'unreadCount', 'liveApplications', 'invoiceCount', 'pendingInvoices', 'paidInvoices', 'outstandingAmount', 'pendingInvoicesList', 'gstin', 'gstVerified', 'wallet', 'walletBalance'))
                 ->header('Cache-Control', 'no-cache, no-store, max-age=0, must-revalidate')
                 ->header('Pragma', 'no-cache')
                 ->header('Expires', 'Fri, 01 Jan 1990 00:00:00 GMT');
@@ -148,16 +133,6 @@ class UserController extends Controller
 
                 return redirect()->route('login.index')
                     ->with('error', 'User not found. Please login again.');
-            }
-
-            // Force KYC completion before accessing profile
-            $hasCompletedKyc = UserKycProfile::where('user_id', $userId)
-                ->where('status', 'completed')
-                ->exists();
-
-            if (! $hasCompletedKyc) {
-                return redirect()->route('user.kyc.show')
-                    ->with('info', 'Please complete your KYC before accessing your profile.');
             }
 
             $pendingRequest = $user->pendingProfileUpdateRequest();
@@ -200,7 +175,13 @@ class UserController extends Controller
             $gstin = $gstVerification ? $gstVerification->gstin : ($user->gstin ?? null);
             $gstVerified = $gstVerification ? $gstVerification->is_verified : ($user->gst_verified ?? false);
 
-            return response()->view('user.profile', compact('user', 'pendingRequest', 'approvedRequest', 'submittedRequest', 'updateApprovedRequest', 'rejectedRequest', 'gstin', 'gstVerified', 'gstVerification'))
+            $irinnApplication = Application::query()
+                ->where('user_id', $userId)
+                ->where('application_type', 'IRINN')
+                ->latest('id')
+                ->first();
+
+            return response()->view('user.profile', compact('user', 'pendingRequest', 'approvedRequest', 'submittedRequest', 'updateApprovedRequest', 'rejectedRequest', 'gstin', 'gstVerified', 'gstVerification', 'irinnApplication'))
                 ->header('Cache-Control', 'no-cache, no-store, max-age=0, must-revalidate')
                 ->header('Pragma', 'no-cache')
                 ->header('Expires', 'Fri, 01 Jan 1990 00:00:00 GMT');
@@ -226,17 +207,13 @@ class UserController extends Controller
                     ->with('error', 'User not found. Please login again.');
             }
 
-            // Get latest GST verification from gst_verifications table
-            $gstVerification = GstVerification::where('user_id', $userId)
-                ->where('is_verified', true)
-                ->latest('updated_at')
+            $irinnApplication = Application::query()
+                ->where('user_id', $userId)
+                ->where('application_type', 'IRINN')
+                ->latest('id')
                 ->first();
 
-            // Get GSTIN and verification status from GST verification
-            $gstin = $gstVerification ? $gstVerification->gstin : ($user->gstin ?? null);
-            $gstVerified = $gstVerification ? $gstVerification->is_verified : ($user->gst_verified ?? false);
-
-            return response()->view('user.profile.edit', compact('user', 'gstin', 'gstVerified', 'gstVerification'))
+            return response()->view('user.profile.edit', compact('user', 'irinnApplication'))
                 ->header('Cache-Control', 'no-cache, no-store, max-age=0, must-revalidate')
                 ->header('Pragma', 'no-cache')
                 ->header('Expires', 'Fri, 01 Jan 1990 00:00:00 GMT');
@@ -249,7 +226,7 @@ class UserController extends Controller
     }
 
     /**
-     * Update user profile (only GSTIN).
+     * Update registered email and mobile only (GST is maintained on your IRINN application record).
      */
     public function update(Request $request)
     {
@@ -263,125 +240,32 @@ class UserController extends Controller
             }
 
             $validated = $request->validate([
-                'gstin' => 'nullable|string|max:15',
-                'gst_verification_id' => 'nullable|integer|exists:gst_verifications,id',
-                'gst_verified' => 'nullable|boolean',
+                'email' => ['required', 'email', 'max:255', Rule::unique('registrations', 'email')->ignore($user->id)],
+                'mobile' => ['required', 'string', 'max:15', Rule::unique('registrations', 'mobile')->ignore($user->id)],
+            ], [
+                'email.unique' => 'This email address is already registered to another account.',
+                'mobile.unique' => 'This mobile number is already registered to another account.',
             ]);
 
-            // Only update GSTIN if provided
-            if (isset($validated['gstin'])) {
-                // Get old GSTIN from latest GST verification or UserKycProfile
-                $oldGstVerification = GstVerification::where('user_id', $userId)
-                    ->where('is_verified', true)
-                    ->latest('updated_at')
-                    ->first();
-                $oldGstin = $oldGstVerification ? $oldGstVerification->gstin : null;
+            $newEmail = strtolower(trim($validated['email']));
+            $newMobile = preg_replace('/\s+/', '', trim($validated['mobile']));
 
-                if (! $oldGstin) {
-                    $userKycProfile = UserKycProfile::where('user_id', $userId)
-                        ->where('status', 'completed')
-                        ->latest()
-                        ->first();
-                    $oldGstin = $userKycProfile?->gstin;
-                }
-
-                $newGstin = strtoupper(trim($validated['gstin']));
-
-                // Check if GSTIN actually changed
-                if ($oldGstin !== $newGstin) {
-                    // Update GSTIN in all user's applications' application_data
-                    $this->updateGstinInApplications($user, $newGstin);
-
-                    // If GST verification ID is provided, update UserKycProfile
-                    if (isset($validated['gst_verification_id'])) {
-                        $gstVerification = GstVerification::find($validated['gst_verification_id']);
-                        if ($gstVerification && $gstVerification->user_id === $userId) {
-                            // Update or create UserKycProfile
-                            $userKycProfile = UserKycProfile::where('user_id', $userId)
-                                ->where('status', 'completed')
-                                ->latest()
-                                ->first();
-
-                            if (! $userKycProfile) {
-                                $userKycProfile = new UserKycProfile;
-                                $userKycProfile->user_id = $userId;
-                                $userKycProfile->status = 'completed';
-                                $userKycProfile->completed_at = now('Asia/Kolkata');
-                            }
-
-                            $userKycProfile->gstin = $newGstin;
-                            $userKycProfile->gst_verified = $validated['gst_verified'] ?? false;
-                            $userKycProfile->gst_verification_id = $gstVerification->id;
-                            $userKycProfile->save();
-
-                            // If GST verification is verified, update kyc_details in applications
-                            if ($gstVerification->is_verified) {
-                                $kycDetailsForApps = [
-                                    'gstin' => $gstVerification->gstin,
-                                    'gst_verified' => true,
-                                    'gst_verification_id' => $gstVerification->id,
-                                    'gst_legal_name' => $gstVerification->legal_name,
-                                    'gst_trade_name' => $gstVerification->trade_name,
-                                    'gst_pan' => $gstVerification->pan,
-                                    'gst_state' => $gstVerification->state,
-                                    'gst_registration_date' => $gstVerification->registration_date
-                                        ? (is_string($gstVerification->registration_date)
-                                            ? $gstVerification->registration_date
-                                            : \Carbon\Carbon::parse($gstVerification->registration_date)->format('Y-m-d'))
-                                        : null,
-                                    'gst_type' => $gstVerification->gst_type,
-                                    'gst_company_status' => $gstVerification->company_status,
-                                    'gst_verified_at' => now('Asia/Kolkata')->toDateTimeString(),
-                                    'gst_primary_address' => $gstVerification->primary_address,
-                                    'gst_constitution_of_business' => $gstVerification->constitution_of_business,
-                                ];
-                                $this->updateKycDetailsInApplications($user, $gstVerification, $kycDetailsForApps);
-                            }
-                        }
-                    }
-
-                    // Log GSTIN change to custom log file
-                    $this->logGstinChange($user, $oldGstin, $newGstin);
-
-                    // Send notifications to admin and superadmin
-                    $this->notifyAdminsOfGstinChange($user, $oldGstin, $newGstin);
-                } else {
-                    // GSTIN not changed, just update verification status if provided
-                    if (isset($validated['gst_verification_id'])) {
-                        $gstVerification = GstVerification::find($validated['gst_verification_id']);
-                        if ($gstVerification && $gstVerification->user_id === $userId) {
-                            $userKycProfile = UserKycProfile::where('user_id', $userId)
-                                ->where('status', 'completed')
-                                ->latest()
-                                ->first();
-
-                            if ($userKycProfile) {
-                                $userKycProfile->gst_verified = $validated['gst_verified'] ?? false;
-                                $userKycProfile->gst_verification_id = $gstVerification->id;
-                                $userKycProfile->save();
-                            }
-                        }
-                    }
-                }
-
-                // Check if KYC completion is pending (from "Complete KYC" button click) and complete it now
-                if (session('pending_kyc_completion')) {
-                    $pendingGstVerificationId = session('pending_kyc_gst_verification_id');
-                    if ($pendingGstVerificationId) {
-                        $gstVerification = GstVerification::find($pendingGstVerificationId);
-                        if ($gstVerification && $gstVerification->user_id === $userId && $gstVerification->is_verified) {
-                            // Complete KYC process now
-                            $this->completeKycOnProfileUpdate($user, $gstVerification);
-                        }
-                    }
-
-                    // Clear pending KYC session data
-                    session()->forget(['pending_kyc_completion', 'pending_kyc_gst_verification_id', 'pending_kyc_details']);
-                }
+            if ($user->email !== $newEmail) {
+                $user->email = $newEmail;
+                $user->email_verified = false;
             }
 
+            if ($user->mobile !== $newMobile) {
+                $user->mobile = $newMobile;
+                $user->mobile_verified = false;
+            }
+
+            $user->save();
+
+            session(['user_email' => $user->email]);
+
             return redirect()->route('user.profile')
-                ->with('success', 'Profile updated successfully.');
+                ->with('success', 'Your registered email and mobile number have been saved. If you changed either value, please complete verification when prompted during login or notifications.');
         } catch (\Illuminate\Validation\ValidationException $e) {
             return back()->withErrors($e->errors())->withInput();
         } catch (Exception $e) {

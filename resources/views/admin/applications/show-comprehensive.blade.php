@@ -55,9 +55,12 @@
                 </div>
                 <div class="list-group list-group-flush">
                     <a href="javascript:void(0)" class="list-group-item list-group-item-action comp-link active" data-target="section-app-info">Application Information</a>
+                    @if($application->application_type === 'IRINN' && $application->hasIrinnNormalizedData())
+                        <a href="javascript:void(0)" class="list-group-item list-group-item-action comp-link" data-target="section-irinn-normalized">IRINN — all submitted fields</a>
+                    @endif
                     <a href="javascript:void(0)" class="list-group-item list-group-item-action comp-link" data-target="section-registration">Registration Details</a>
                     <a href="javascript:void(0)" class="list-group-item list-group-item-action comp-link" data-target="section-kyc">KYC Details</a>
-                    <a href="javascript:void(0)" class="list-group-item list-group-item-action comp-link" data-target="section-application-data">IRINN Application Data</a>
+                    <a href="javascript:void(0)" class="list-group-item list-group-item-action comp-link" data-target="section-application-data">IRINN Application Data (legacy)</a>
                     <a href="javascript:void(0)" class="list-group-item list-group-item-action comp-link" data-target="section-status">Application Status</a>
                     <a href="javascript:void(0)" class="list-group-item list-group-item-action comp-link" data-target="section-gst">GST Change History</a>
                     <a href="javascript:void(0)" class="list-group-item list-group-item-action comp-link" data-target="section-json">Raw Snapshot (Debug)</a>
@@ -87,6 +90,18 @@
                     </div>
                 </div>
             </div>
+
+            @if($application->application_type === 'IRINN' && $application->hasIrinnNormalizedData())
+            <div id="section-irinn-normalized" class="card shadow-sm border-0 mb-3 comp-section" style="border-radius:14px;display:none;">
+                <div class="card-header theme-bg-blue text-white" style="border-radius:14px 14px 0 0;"><strong>IRINN — all submitted fields</strong></div>
+                <div class="card-body">
+                    @include('partials.irinn-normalized-application-details', [
+                        'application' => $application,
+                        'documentRouteName' => 'admin.applications.document',
+                    ])
+                </div>
+            </div>
+            @endif
 
             <div id="section-registration" class="card shadow-sm border-0 mb-3 comp-section" style="border-radius:14px;display:none;">
                 <div class="card-header theme-bg-blue text-white" style="border-radius:14px 14px 0 0;"><strong>Registration Details</strong></div>

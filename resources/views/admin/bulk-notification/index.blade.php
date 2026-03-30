@@ -81,51 +81,12 @@
                                             name="filter_type" 
                                             required>
                                         <option value="">Select filter type...</option>
-                                        <option value="all" {{ old('filter_type') === 'all' ? 'selected' : '' }}>All Users (with IX applications)</option>
-                                        <option value="zone" {{ old('filter_type') === 'zone' ? 'selected' : '' }}>By Zone</option>
-                                        <option value="location" {{ old('filter_type') === 'location' ? 'selected' : '' }}>By Location/Node</option>
+                                        <option value="all" {{ old('filter_type') === 'all' ? 'selected' : '' }}>All IRINN members (with membership ID)</option>
                                         <option value="payment_status" {{ old('filter_type') === 'payment_status' ? 'selected' : '' }}>By Payment Status</option>
                                         <option value="application_status" {{ old('filter_type') === 'application_status' ? 'selected' : '' }}>By Application Status</option>
                                         <option value="user_wise" {{ old('filter_type') === 'user_wise' ? 'selected' : '' }}>Select Specific Users</option>
                                     </select>
                                     @error('filter_type')
-                                        <div class="invalid-feedback">{{ $message }}</div>
-                                    @enderror
-                                </div>
-
-                                <!-- Zone Filter -->
-                                <div class="col-12" id="zone_filter" style="display: none;">
-                                    <label for="zone" class="form-label">Zone <span class="text-danger">*</span></label>
-                                    <select class="form-select @error('zone') is-invalid @enderror" 
-                                            id="zone" 
-                                            name="zone">
-                                        <option value="">Select zone...</option>
-                                        @foreach($zones as $zoneOption)
-                                            <option value="{{ $zoneOption }}" {{ old('zone') === $zoneOption ? 'selected' : '' }}>{{ $zoneOption }}</option>
-                                        @endforeach
-                                    </select>
-                                    @error('zone')
-                                        <div class="invalid-feedback">{{ $message }}</div>
-                                    @enderror
-                                </div>
-
-                                <!-- Location Filter -->
-                                <div class="col-12" id="location_filter" style="display: none;">
-                                    <label for="location_id" class="form-label">Location/Node <span class="text-danger">*</span></label>
-                                    <select class="form-select @error('location_id') is-invalid @enderror" 
-                                            id="location_id" 
-                                            name="location_id">
-                                        <option value="">Select location...</option>
-                                        @foreach($locations as $location)
-                                            <option value="{{ $location->id }}" {{ old('location_id') == $location->id ? 'selected' : '' }}>
-                                                {{ $location->name }} ({{ $location->state }}) - {{ ucfirst($location->node_type) }}
-                                                @if($location->zone)
-                                                    - Zone: {{ $location->zone }}
-                                                @endif
-                                            </option>
-                                        @endforeach
-                                    </select>
-                                    @error('location_id')
                                         <div class="invalid-feedback">{{ $message }}</div>
                                     @enderror
                                 </div>
@@ -225,8 +186,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Hide all filters initially
     function hideAllFilters() {
-        zoneFilter.style.display = 'none';
-        locationFilter.style.display = 'none';
         paymentStatusFilter.style.display = 'none';
         applicationStatusFilter.style.display = 'none';
         userWiseFilter.style.display = 'none';
@@ -237,12 +196,6 @@ document.addEventListener('DOMContentLoaded', function() {
         hideAllFilters();
         
         switch(this.value) {
-            case 'zone':
-                zoneFilter.style.display = 'block';
-                break;
-            case 'location':
-                locationFilter.style.display = 'block';
-                break;
             case 'payment_status':
                 paymentStatusFilter.style.display = 'block';
                 break;
@@ -286,7 +239,7 @@ document.addEventListener('DOMContentLoaded', function() {
         let message = 'Are you sure you want to send this notification?';
         
         if (filterTypeValue === 'all') {
-            message += '\n\nThis will send notifications to ALL users with IX applications.';
+            message += '\n\nThis will send notifications to all users with an IRINN membership.';
         }
         
         if (!confirm(message)) {

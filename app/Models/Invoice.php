@@ -38,6 +38,7 @@ class Invoice extends Model
         'manual_payment_id',
         'manual_payment_notes',
         'payment_receipt_path',
+        'billing_payment_proof_path',
         'tds_certificate_path',
         'tds_updated_at',
         'pdf_path',

@@ -103,56 +103,52 @@ class UserInvoiceController extends Controller
             $application = $invoice->application;
             $downloadType = $request->query('type', 'auto'); // 'invoice', 'credit_note', or 'auto'
 
-            if ($application->application_type === 'IX') {
-                // If credit note exists and type is 'credit_note' or 'auto', serve credit note
-                if (($downloadType === 'credit_note' || $downloadType === 'auto') && $invoice->hasCreditNote()) {
-                    // Ensure credit note PDF exists (generate if missing)
-                    app(AdminController::class)->ensureCreditNotePdfExists($application, $invoice);
+            if ($application->application_type !== 'IRINN') {
+                return redirect()->route('user.invoices.index')
+                    ->with('error', 'Invoice not found.');
+            }
 
-                    if ($invoice->credit_note_pdf_path && Storage::disk('public')->exists($invoice->credit_note_pdf_path)) {
-                        $filePath = Storage::disk('public')->path($invoice->credit_note_pdf_path);
-                        // Credit note filename: invoice_number + "C.pdf" (e.g., NIXIEX2526-2292C.pdf)
-                        $safeFilename = str_replace(['/', '\\'], '-', $invoice->invoice_number).'C.pdf';
+            if (($downloadType === 'credit_note' || $downloadType === 'auto') && $invoice->hasCreditNote()) {
+                app(AdminController::class)->ensureCreditNotePdfExists($application, $invoice);
+                $invoice->refresh();
 
-                        return response()->download($filePath, $safeFilename);
-                    }
+                if ($invoice->credit_note_pdf_path && Storage::disk('public')->exists($invoice->credit_note_pdf_path)) {
+                    $filePath = Storage::disk('public')->path($invoice->credit_note_pdf_path);
+                    $safeFilename = str_replace(['/', '\\'], '-', $invoice->invoice_number).'C.pdf';
 
-                    return back()->with('error', 'Credit note PDF not found and could not be generated.');
-                }
-
-                // Serve invoice PDF (original or cancelled version)
-                if ($downloadType === 'invoice' || ($downloadType === 'auto' && ! $invoice->hasCreditNote())) {
-                    app(AdminController::class)->ensureInvoicePdfExists($application, $invoice);
-
-                    if ($invoice->pdf_path && Storage::disk('public')->exists($invoice->pdf_path)) {
-                        $filePath = Storage::disk('public')->path($invoice->pdf_path);
-                        $safeFilename = str_replace(['/', '\\'], '-', $invoice->invoice_number).'_invoice.pdf';
-
-                        return response()->download($filePath, $safeFilename);
-                    }
-
-                    return redirect()->route('user.invoices.index')
-                        ->with('error', 'Invoice PDF not found. It may not have been generated yet.');
+                    return response()->download($filePath, $safeFilename);
                 }
 
                 return redirect()->route('user.invoices.index')
-                    ->with('error', 'Invalid download type specified.');
+                    ->with('error', 'Credit note PDF not found and could not be generated.');
             }
 
-            $safeFilename = str_replace(['/', '\\'], '-', $invoice->invoice_number).'_invoice.pdf';
+            if ($downloadType === 'invoice' || ($downloadType === 'auto' && ! $invoice->hasCreditNote())) {
+                app(AdminController::class)->ensureInvoicePdfExists($application, $invoice);
+                $invoice->refresh();
 
-            // For IRIN applications, serve from application_data pdfs
-            $appData = $application->application_data ?? [];
-            $pdfs = $appData['pdfs'] ?? [];
+                if ($invoice->pdf_path && Storage::disk('public')->exists($invoice->pdf_path)) {
+                    $filePath = Storage::disk('public')->path($invoice->pdf_path);
+                    $safeFilename = str_replace(['/', '\\'], '-', $invoice->invoice_number).'_invoice.pdf';
 
-            if (isset($pdfs['invoice_pdf']) && Storage::disk('public')->exists($pdfs['invoice_pdf'])) {
-                $filePath = Storage::disk('public')->path($pdfs['invoice_pdf']);
+                    return response()->download($filePath, $safeFilename);
+                }
 
-                return response()->download($filePath, $safeFilename);
+                $safeFilename = str_replace(['/', '\\'], '-', $invoice->invoice_number).'_invoice.pdf';
+                $appData = $application->application_data ?? [];
+                $pdfs = $appData['pdfs'] ?? [];
+                if (isset($pdfs['invoice_pdf']) && Storage::disk('public')->exists($pdfs['invoice_pdf'])) {
+                    $filePath = Storage::disk('public')->path($pdfs['invoice_pdf']);
+
+                    return response()->download($filePath, $safeFilename);
+                }
+
+                return redirect()->route('user.invoices.index')
+                    ->with('error', 'Invoice PDF not found. Please contact support.');
             }
 
             return redirect()->route('user.invoices.index')
-                ->with('error', 'Invoice PDF not found. Please contact support.');
+                ->with('error', 'Invalid download type specified.');
         } catch (Exception $e) {
             Log::error('Error downloading invoice PDF: '.$e->getMessage());
 

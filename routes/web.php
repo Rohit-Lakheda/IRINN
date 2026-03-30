@@ -5,14 +5,10 @@ use App\Http\Controllers\AdminGrievanceController;
 use App\Http\Controllers\AdminLoginController;
 use App\Http\Controllers\AdminReactivationRequestController;
 use App\Http\Controllers\ApplicationController;
-use App\Http\Controllers\IxApplicationController;
 use App\Http\Controllers\LoginController;
 use App\Http\Controllers\MessageController;
 use App\Http\Controllers\ProfileUpdateRequestController;
 use App\Http\Controllers\RegisterController;
-use App\Http\Controllers\SuperAdmin\InvoiceBackfillController as SuperAdminInvoiceBackfillController;
-use App\Http\Controllers\SuperAdmin\IxLocationController as SuperAdminIxLocationController;
-use App\Http\Controllers\SuperAdmin\IxPortPricingController as SuperAdminIxPortPricingController;
 use App\Http\Controllers\SuperAdminController;
 use App\Http\Controllers\SuperAdminGrievanceController;
 use App\Http\Controllers\SuperAdminLoginController;
@@ -42,15 +38,6 @@ Route::prefix('superadmin')->name('superadmin.')->group(function () {
 Route::prefix('superadmin')->name('superadmin.')->middleware(['superadmin'])->group(function () {
     Route::get('/dashboard', [SuperAdminController::class, 'index'])->name('dashboard');
 
-    // Backend Data Entry routes
-    Route::get('/backend-data-entry', [\App\Http\Controllers\BackendDataEntryController::class, 'index'])->name('backend-data-entry');
-    Route::post('/backend-data-entry/verify-pan', [\App\Http\Controllers\BackendDataEntryController::class, 'verifyPan'])->name('backend-data-entry.verify-pan');
-    Route::post('/backend-data-entry', [\App\Http\Controllers\BackendDataEntryController::class, 'store'])->name('backend-data-entry.store');
-
-    // IX Points management
-    Route::get('/ix-points', [SuperAdminController::class, 'ixPoints'])->name('ix-points');
-    Route::get('/ix-points/{id}', [SuperAdminController::class, 'showIxPoint'])->name('ix-points.show');
-
     // User management
     Route::get('/users', [SuperAdminController::class, 'users'])->name('users');
     Route::get('/users/{id}', [SuperAdminController::class, 'showUser'])->name('users.show');
@@ -60,9 +47,6 @@ Route::prefix('superadmin')->name('superadmin.')->middleware(['superadmin'])->gr
 
     // Applications routes
     Route::get('/applications', [SuperAdminController::class, 'applications'])->name('applications.index');
-    // Specific routes must come before parameterized routes
-    Route::get('/applications/backend-data-entry', [SuperAdminController::class, 'backendDataEntryApplications'])->name('applications.backend-data-entry');
-    Route::post('/applications/backend-data-entry/bulk-approve', [SuperAdminController::class, 'bulkApproveBackendApplications'])->name('applications.backend-data-entry.bulk-approve');
     Route::get('/applications/{id}', [SuperAdminController::class, 'showApplication'])->name('applications.show');
     // View-only: no approval/disapproval or member/service-status actions for Super Admin (use Admin panel).
 
@@ -92,36 +76,9 @@ Route::prefix('superadmin')->name('superadmin.')->middleware(['superadmin'])->gr
     Route::delete('/ip-pricing/{id}', [\App\Http\Controllers\SuperAdmin\IpPricingController::class, 'destroy'])->name('ip-pricing.destroy');
     Route::get('/ip-pricing/{id}/history', [\App\Http\Controllers\SuperAdmin\IpPricingController::class, 'history'])->name('ip-pricing.history');
 
-    // IX Location management
-    Route::get('/ix-locations', [SuperAdminIxLocationController::class, 'index'])->name('ix-locations.index');
-    Route::post('/ix-locations', [SuperAdminIxLocationController::class, 'store'])->name('ix-locations.store');
-    Route::put('/ix-locations/{ixLocation}', [SuperAdminIxLocationController::class, 'update'])->name('ix-locations.update');
-    Route::patch('/ix-locations/{ixLocation}/toggle', [SuperAdminIxLocationController::class, 'toggleStatus'])->name('ix-locations.toggle');
-    Route::delete('/ix-locations/{ixLocation}', [SuperAdminIxLocationController::class, 'destroy'])->name('ix-locations.destroy');
-    Route::get('/ix-locations/{ixLocation}/history', [SuperAdminIxLocationController::class, 'history'])->name('ix-locations.history');
-
-    // IX Port pricing management
-    Route::get('/ix-port-pricing', [SuperAdminIxPortPricingController::class, 'index'])->name('ix-port-pricing.index');
-    Route::post('/ix-port-pricing', [SuperAdminIxPortPricingController::class, 'store'])->name('ix-port-pricing.store');
-    Route::put('/ix-port-pricing/{ixPortPricing}', [SuperAdminIxPortPricingController::class, 'update'])->name('ix-port-pricing.update');
-    Route::patch('/ix-port-pricing/{ixPortPricing}/toggle', [SuperAdminIxPortPricingController::class, 'toggleStatus'])->name('ix-port-pricing.toggle');
-    Route::delete('/ix-port-pricing/{ixPortPricing}', [SuperAdminIxPortPricingController::class, 'destroy'])->name('ix-port-pricing.destroy');
-
-    // IX Application pricing management
-    Route::get('/ix-application-pricing', [\App\Http\Controllers\SuperAdmin\IxApplicationPricingController::class, 'index'])->name('ix-application-pricing.index');
-    Route::post('/ix-application-pricing', [\App\Http\Controllers\SuperAdmin\IxApplicationPricingController::class, 'store'])->name('ix-application-pricing.store');
-    Route::put('/ix-application-pricing/{ixApplicationPricing}', [\App\Http\Controllers\SuperAdmin\IxApplicationPricingController::class, 'update'])->name('ix-application-pricing.update');
-    Route::patch('/ix-application-pricing/{ixApplicationPricing}/toggle', [\App\Http\Controllers\SuperAdmin\IxApplicationPricingController::class, 'toggleStatus'])->name('ix-application-pricing.toggle');
-    Route::delete('/ix-application-pricing/{ixApplicationPricing}', [\App\Http\Controllers\SuperAdmin\IxApplicationPricingController::class, 'destroy'])->name('ix-application-pricing.destroy');
-
     // Reactivation fee settings
     Route::get('/reactivation-fee', [SuperAdminController::class, 'reactivationFee'])->name('reactivation-fee');
     Route::post('/reactivation-fee', [SuperAdminController::class, 'updateReactivationFee'])->name('reactivation-fee.update');
-
-    // IX Membership fee settings
-    Route::get('/ix-membership-fee', [SuperAdminController::class, 'ixMembershipFee'])->name('ix-membership-fee');
-    Route::post('/ix-membership-fee', [SuperAdminController::class, 'updateIxMembershipFee'])->name('ix-membership-fee.update');
-    Route::post('/ix-membership-fee/generate', [SuperAdminController::class, 'generateIxMembershipInvoices'])->name('ix-membership-fee.generate');
 
     // Nodal Officer Email management
     Route::get('/nodal-officer-emails', [SuperAdminController::class, 'nodalOfficerEmails'])->name('nodal-officer-emails');
@@ -173,11 +130,6 @@ Route::prefix('superadmin')->name('superadmin.')->middleware(['superadmin'])->gr
 
     // Invoice management routes
     Route::prefix('invoices')->name('invoices.')->group(function () {
-        // Backfill: create already-paid application-fee invoices for selected applications (no email)
-        // IMPORTANT: must be defined before the `/{id}` routes to avoid route conflicts.
-        Route::get('/backfill-paid', [SuperAdminInvoiceBackfillController::class, 'index'])->name('backfill-paid.index');
-        Route::post('/backfill-paid', [SuperAdminInvoiceBackfillController::class, 'store'])->name('backfill-paid.store');
-
         Route::get('/', [SuperAdminController::class, 'invoices'])->name('index');
         Route::get('/{id}', [SuperAdminController::class, 'showInvoice'])->whereNumber('id')->name('show');
         Route::get('/{id}/download', [SuperAdminController::class, 'downloadInvoice'])->whereNumber('id')->name('download');
@@ -214,7 +166,6 @@ Route::prefix('admin')->name('admin.')->middleware(['admin'])->group(function ()
     // Members management (users with membership_id)
     Route::get('/members', [AdminController::class, 'members'])->name('members');
     Route::get('/members/export', [AdminController::class, 'exportMembersToExcel'])->name('members.export');
-    Route::get('/members/export-invoice-amounts', [AdminController::class, 'exportInvoiceAmounts'])->name('members.export-invoice-amounts');
     Route::get('/members/export-gst-verification', [AdminController::class, 'exportGstVerificationReport'])->name('members.export-gst-verification');
     Route::get('/applications/export', [AdminController::class, 'exportApplicationsToExcel'])->name('applications.export');
     Route::post('/applications/{applicationId}/toggle-member-status', [AdminController::class, 'toggleMemberStatus'])->name('applications.toggle-member-status');
@@ -254,15 +205,6 @@ Route::prefix('admin')->name('admin.')->middleware(['admin'])->group(function ()
     Route::get('/bulk-notification', [AdminController::class, 'bulkNotification'])->name('bulk-notification');
     Route::post('/bulk-notification/send', [AdminController::class, 'sendBulkNotification'])->name('bulk-notification.send');
 
-    // Cron Job Report (IX invoice cron logs)
-    Route::get('/cron-report', [AdminController::class, 'cronReport'])->name('cron-report');
-    Route::get('/cron-report/export', [AdminController::class, 'exportCronReport'])->name('cron-report.export');
-
-    // Backend Data Entry routes
-    Route::get('/backend-data-entry', [\App\Http\Controllers\BackendDataEntryController::class, 'index'])->name('backend-data-entry');
-    Route::post('/backend-data-entry/verify-pan', [\App\Http\Controllers\BackendDataEntryController::class, 'verifyPan'])->name('backend-data-entry.verify-pan');
-    Route::post('/backend-data-entry', [\App\Http\Controllers\BackendDataEntryController::class, 'store'])->name('backend-data-entry.store');
-
     // Application management routes
     Route::get('/applications', [AdminController::class, 'applications'])->name('applications');
     Route::get('/applications/update-kyc-details', [AdminController::class, 'updateKycDetails'])->name('applications.update-kyc-details');
@@ -277,54 +219,13 @@ Route::prefix('admin')->name('admin.')->middleware(['admin'])->group(function ()
     Route::get('/applications/{id}', [AdminController::class, 'showApplication'])->name('applications.show');
     Route::get('/applications/{id}/comprehensive', [AdminController::class, 'showApplicationComprehensive'])->name('applications.show-comprehensive');
 
-    // IRINN workflow routes (helpdesk -> hostmaster -> billing + resubmission)
+    // IRINN workflow routes (helpdesk -> hostmaster -> billing -> billing_approved + resubmission)
     Route::post('/applications/{id}/irinn/change-stage', [AdminController::class, 'irinnChangeStage'])->name('applications.irinn.change-stage');
     Route::post('/applications/{id}/irinn/request-resubmission', [AdminController::class, 'irinnRequestResubmission'])->name('applications.irinn.request-resubmission');
-
-    // Legacy Processor routes (for backward compatibility)
-    Route::post('/applications/{id}/approve-to-finance', [AdminController::class, 'approveToFinance'])->name('applications.approve-to-finance');
-
-    // Legacy Finance routes (for backward compatibility)
-    Route::post('/applications/{id}/approve-to-technical', [AdminController::class, 'approveToTechnical'])->name('applications.approve-to-technical');
-    Route::post('/applications/{id}/send-back-to-processor', [AdminController::class, 'sendBackToProcessor'])->name('applications.send-back-to-processor');
-
-    // Legacy Technical routes (for backward compatibility)
-    Route::post('/applications/{id}/approve', [AdminController::class, 'approveApplication'])->name('applications.approve');
-    Route::post('/applications/{id}/send-back-to-finance', [AdminController::class, 'sendBackToFinance'])->name('applications.send-back-to-finance');
-
-    // New IX Workflow routes
-    // IX Processor routes
-    Route::post('/applications/{id}/ix-processor/forward-to-legal', [AdminController::class, 'ixProcessorForwardToLegal'])->name('applications.ix-processor.forward-to-legal');
-    Route::post('/applications/{id}/ix-processor/request-resubmission', [AdminController::class, 'ixProcessorRequestResubmission'])->name('applications.ix-processor.request-resubmission');
-
-    // IX Legal routes
-    Route::post('/applications/{id}/ix-legal/forward-to-head', [AdminController::class, 'ixLegalForwardToHead'])->name('applications.ix-legal.forward-to-head');
-    Route::post('/applications/{id}/ix-legal/send-back-to-processor', [AdminController::class, 'ixLegalSendBackToProcessor'])->name('applications.ix-legal.send-back-to-processor');
-
-    // IX Head routes
-    Route::post('/applications/{id}/ix-head/forward-to-ceo', [AdminController::class, 'ixHeadForwardToCeo'])->name('applications.ix-head.forward-to-ceo');
-    Route::post('/applications/{id}/ix-head/send-back-to-processor', [AdminController::class, 'ixHeadSendBackToProcessor'])->name('applications.ix-head.send-back-to-processor');
-
-    // CEO routes
-    Route::post('/applications/{id}/ceo/approve', [AdminController::class, 'ceoApprove'])->name('applications.ceo.approve');
-    Route::post('/applications/{id}/ceo/reject', [AdminController::class, 'ceoReject'])->name('applications.ceo.reject');
-    Route::post('/applications/{id}/ceo/send-back-to-head', [AdminController::class, 'ceoSendBackToHead'])->name('applications.ceo.send-back-to-head');
-
-    // Nodal Officer routes
-    Route::post('/applications/{id}/nodal-officer/assign-port', [AdminController::class, 'nodalOfficerAssignPort'])->name('applications.nodal-officer.assign-port');
-    Route::post('/applications/{id}/nodal-officer/hold', [AdminController::class, 'nodalOfficerHold'])->name('applications.nodal-officer.hold');
-    Route::post('/applications/{id}/nodal-officer/not-feasible', [AdminController::class, 'nodalOfficerNotFeasible'])->name('applications.nodal-officer.not-feasible');
-    Route::post('/applications/{id}/nodal-officer/customer-denied', [AdminController::class, 'nodalOfficerCustomerDenied'])->name('applications.nodal-officer.customer-denied');
-    Route::post('/applications/{id}/nodal-officer/forward-to-processor', [AdminController::class, 'nodalOfficerForwardToProcessor'])->name('applications.nodal-officer.forward-to-processor');
-
-    // IX Tech Team routes
-    Route::post('/applications/{id}/ix-tech-team/assign-ip', [AdminController::class, 'ixTechTeamAssignIp'])->name('applications.ix-tech-team.assign-ip');
-
-    // IX Account routes
-    Route::get('/applications/{id}/ix-account/generate-invoice', [AdminController::class, 'ixAccountShowInvoiceForm'])->name('applications.ix-account.generate-invoice');
-    Route::get('/applications/{id}/ix-account/generate-pending-invoice', [AdminController::class, 'ixAccountShowPendingInvoiceForm'])->name('applications.ix-account.generate-pending-invoice');
-    Route::post('/applications/{id}/ix-account/generate-invoice', [AdminController::class, 'ixAccountGenerateInvoice'])->name('applications.ix-account.generate-invoice.store');
-    Route::post('/applications/{id}/ix-account/verify-payment', [AdminController::class, 'ixAccountVerifyPayment'])->name('applications.ix-account.verify-payment');
+    Route::post('/applications/{id}/irinn/billing-discount', [AdminController::class, 'irinnBillingUpdateDiscount'])->name('applications.irinn.billing-discount');
+    Route::get('/applications/{id}/irinn/preview-annual-invoice', [AdminController::class, 'irinnBillingPreviewAnnualInvoice'])->name('applications.irinn.preview-annual-invoice');
+    Route::post('/applications/{id}/irinn/generate-annual-invoice', [AdminController::class, 'irinnBillingGenerateAnnualInvoice'])->name('applications.irinn.generate-annual-invoice');
+    Route::post('/applications/{applicationId}/irinn/invoices/{invoice}/mark-paid', [AdminController::class, 'irinnBillingMarkAnnualInvoicePaid'])->name('applications.irinn.invoice.mark-paid');
 
     // Grievance routes
     Route::prefix('grievance')->name('grievance.')->group(function () {
@@ -337,24 +238,9 @@ Route::prefix('admin')->name('admin.')->middleware(['admin'])->group(function ()
         Route::post('/{id}/close', [AdminGrievanceController::class, 'close'])->name('close');
     });
 
-    // IX Account invoice manual payment
-    Route::post('/applications/invoice/{invoice}/mark-paid', [AdminController::class, 'ixAccountMarkInvoicePaid'])->name('applications.invoice.mark-paid');
-
-    // IX Account invoice management
-    Route::get('/applications/invoice/{invoice}/edit', [AdminController::class, 'ixAccountEditInvoice'])->name('applications.invoice.edit');
-    Route::put('/applications/invoice/{invoice}', [AdminController::class, 'ixAccountUpdateInvoice'])->name('applications.invoice.update');
-    Route::delete('/applications/invoice/{invoice}', [AdminController::class, 'ixAccountDeleteInvoice'])->name('applications.invoice.delete');
-    Route::post('/applications/invoice/{invoice}/cancel', [AdminController::class, 'ixAccountCancelInvoice'])->name('applications.invoice.cancel');
-    Route::post('/applications/invoice/{invoice}/credit-note', [AdminController::class, 'ixAccountGenerateCreditNote'])->name('applications.invoice.credit-note');
-    Route::post('/applications/invoice/{invoice}/change-status', [AdminController::class, 'ixAccountChangeInvoiceStatus'])->name('applications.invoice.change-status');
-    Route::post('/applications/invoice/{invoice}/mark-unpaid', [AdminController::class, 'ixAccountMarkInvoiceUnpaid'])->name('applications.invoice.mark-unpaid');
     Route::get('/applications/invoice/{invoice}/download', [AdminController::class, 'downloadInvoice'])->name('applications.invoice.download');
-
-    // IX Account payment allocation
-    Route::get('/applications/payment-allocation', [AdminController::class, 'showPaymentAllocationForm'])->name('applications.payment-allocation.form');
-    Route::get('/applications/search-users', [AdminController::class, 'searchUsersForAllocation'])->name('applications.search-users');
-    Route::post('/applications/allocate-payment', [AdminController::class, 'ixAccountAllocatePayment'])->name('applications.allocate-payment');
-    Route::get('/applications/user/{userId}/invoices', [AdminController::class, 'getUserInvoicesForAllocation'])->name('applications.user.invoices');
+    Route::get('/applications/invoice/{invoice}/tds-certificate', [AdminController::class, 'downloadInvoiceTdsCertificate'])->name('applications.invoice.tds-certificate');
+    Route::get('/applications/invoice/{invoice}/billing-payment-proof', [AdminController::class, 'downloadInvoiceBillingPaymentProof'])->name('applications.invoice.billing-payment-proof');
 
     // Invoice routes
     Route::prefix('invoices')->name('invoices.')->group(function () {
@@ -362,20 +248,6 @@ Route::prefix('admin')->name('admin.')->middleware(['admin'])->group(function ()
         Route::get('/{id}/download', [AdminController::class, 'downloadInvoice'])->name('download');
     });
 
-    // Plan change routes
-    Route::prefix('plan-change')->name('plan-change.')->group(function () {
-        Route::get('/', [\App\Http\Controllers\AdminPlanChangeRequestController::class, 'index'])->name('index');
-        Route::get('/{id}', [\App\Http\Controllers\AdminPlanChangeRequestController::class, 'show'])->name('show');
-        Route::post('/{id}/approve', [\App\Http\Controllers\AdminPlanChangeRequestController::class, 'approve'])->name('approve');
-        Route::post('/{id}/reject', [\App\Http\Controllers\AdminPlanChangeRequestController::class, 'reject'])->name('reject');
-        Route::delete('/{id}', [\App\Http\Controllers\AdminPlanChangeRequestController::class, 'destroy'])->name('destroy');
-    });
-
-    // IX Points routes
-    Route::get('/ix-points', [AdminController::class, 'ixPoints'])->name('ix-points');
-    Route::get('/ix-points/{id}', [AdminController::class, 'showIxPoint'])->name('ix-points.show');
-    Route::get('/ix-points/{id}/applications', [AdminController::class, 'ixPointApplications'])->name('ix-points.applications');
-    Route::get('/ix-points/{id}/members', [AdminController::class, 'ixPointMembers'])->name('ix-points.members');
 });
 
 // Register Routes (Public - no authentication required)
@@ -465,7 +337,7 @@ Route::prefix('user')->name('user.')->middleware(['user.auth'])->group(function 
 
         // IRINN Application routes (must be before {id} route)
         Route::prefix('irin')->name('irin.')->group(function () {
-            //Route::get('/create', [ApplicationController::class, 'createIrin'])->name('create');
+            // Route::get('/create', [ApplicationController::class, 'createIrin'])->name('create');
             Route::get('/create-new', fn () => redirect()->route('user.irinn.create', [], 301))->name('create-new');
             Route::get('/preview', [ApplicationController::class, 'previewIrin'])->name('preview');
             Route::get('/preview-document/{doc}', [ApplicationController::class, 'previewIrinDocument'])->name('preview-document');
@@ -478,6 +350,10 @@ Route::prefix('user')->name('user.')->middleware(['user.auth'])->group(function 
             Route::post('/check-verification-status', [ApplicationController::class, 'checkVerificationStatus'])->name('check-verification-status');
             Route::post('/store', [ApplicationController::class, 'storeIrin'])->name('store');
             Route::post('/store-new', [ApplicationController::class, 'storeIrinNew'])->name('store-new');
+            Route::post('/flow/send-email-otp', [\App\Http\Controllers\IrinnApplicationOtpController::class, 'sendEmailOtp'])->name('flow.send-email-otp');
+            Route::post('/flow/verify-email-otp', [\App\Http\Controllers\IrinnApplicationOtpController::class, 'verifyEmailOtp'])->name('flow.verify-email-otp');
+            Route::post('/flow/send-mobile-otp', [\App\Http\Controllers\IrinnApplicationOtpController::class, 'sendMobileOtp'])->name('flow.send-mobile-otp');
+            Route::post('/flow/verify-mobile-otp', [\App\Http\Controllers\IrinnApplicationOtpController::class, 'verifyMobileOtp'])->name('flow.verify-mobile-otp');
             Route::get('/pricing', [ApplicationController::class, 'getIpPricing'])->name('pricing');
             // NOTE: PayU callbacks MUST be outside auth middleware; see global routes below.
             // Route::match(['get', 'post'], '/payment-success', [ApplicationController::class, 'paymentSuccess'])->name('payment-success');
@@ -487,35 +363,6 @@ Route::prefix('user')->name('user.')->middleware(['user.auth'])->group(function 
             Route::get('/{id}/resubmit', [ApplicationController::class, 'editResubmit'])->name('resubmit');
             Route::post('/{id}/resubmit', [ApplicationController::class, 'storeResubmission'])->name('resubmit.store');
             Route::get('/{id}/document/{doc}', [ApplicationController::class, 'serveResubmitDocument'])->name('resubmit.document');
-        });
-
-        // IX Application routes
-        Route::prefix('ix')->name('ix.')->group(function () {
-            // Route::get('/create', [IxApplicationController::class, 'create'])->name('create');
-            // Route::get('/create-new', [IxApplicationController::class, 'createNew'])->name('create-new');
-            Route::post('/submit', [IxApplicationController::class, 'store'])->name('store');
-            Route::post('/initiate-payment', [IxApplicationController::class, 'initiatePayment'])->name('initiate-payment');
-            Route::post('/initiate-payment-with-wallet', [IxApplicationController::class, 'initiatePaymentWithWallet'])->name('initiate-payment-with-wallet');
-            Route::get('/{id}/pay-now', [IxApplicationController::class, 'payNow'])->name('pay-now');
-            Route::match(['get', 'post'], '/{id}/pay-now-with-wallet', [IxApplicationController::class, 'payNowWithWallet'])->name('pay-now-with-wallet');
-            Route::get('/preview', [IxApplicationController::class, 'preview'])->name('preview');
-            Route::post('/{applicationId}/submit', [IxApplicationController::class, 'finalSubmit'])->name('final-submit');
-            Route::get('/agreement', [IxApplicationController::class, 'downloadAgreement'])->name('agreement');
-            Route::get('/locations', [IxApplicationController::class, 'locations'])->name('locations');
-            Route::get('/pricing', [IxApplicationController::class, 'pricing'])->name('pricing');
-            Route::get('/application-pricing', [IxApplicationController::class, 'getApplicationPricing'])->name('application-pricing');
-            Route::get('/{id}/download-application-pdf', [IxApplicationController::class, 'downloadApplicationPdf'])->name('download-application-pdf');
-            Route::get('/{id}/download-invoice-pdf', [IxApplicationController::class, 'downloadInvoicePdf'])->name('download-invoice-pdf');
-
-            // Verification endpoints
-            Route::post('/verify-representative-pan', [IxApplicationController::class, 'verifyRepresentativePan'])->name('verify-representative-pan');
-            Route::post('/check-representative-pan-status', [IxApplicationController::class, 'checkRepresentativePanStatus'])->name('check-representative-pan-status');
-            Route::post('/send-email-otp', [IxApplicationController::class, 'sendEmailOtp'])->name('send-email-otp');
-            Route::post('/verify-email-otp', [IxApplicationController::class, 'verifyEmailOtp'])->name('verify-email-otp');
-            Route::post('/send-mobile-otp', [IxApplicationController::class, 'sendMobileOtp'])->name('send-mobile-otp');
-            Route::post('/verify-mobile-otp', [IxApplicationController::class, 'verifyMobileOtp'])->name('verify-mobile-otp');
-            Route::post('/verify-gstin', [IxApplicationController::class, 'verifyGstin'])->name('verify-gstin');
-            Route::post('/check-gstin-status', [IxApplicationController::class, 'checkGstinStatus'])->name('check-gstin-status');
         });
 
         // PDF download routes (must be before {id} route)
@@ -535,12 +382,6 @@ Route::prefix('user')->name('user.')->middleware(['user.auth'])->group(function 
         Route::get('/attachments/{id}/download', [UserGrievanceController::class, 'downloadAttachment'])->name('attachments.download');
         Route::get('/{id}', [UserGrievanceController::class, 'show'])->name('show');
         Route::post('/{id}/reply', [UserGrievanceController::class, 'reply'])->name('reply');
-    });
-
-    // Plan change routes
-    Route::prefix('applications/{applicationId}/plan-change')->name('plan-change.')->group(function () {
-        Route::get('/create', [\App\Http\Controllers\PlanChangeRequestController::class, 'create'])->name('create');
-        Route::post('/', [\App\Http\Controllers\PlanChangeRequestController::class, 'store'])->name('store');
     });
 
     // Invoice routes
@@ -582,10 +423,6 @@ Route::get('/user/login-from-cookie', [LoginController::class, 'loginFromCookie'
 
 // PayU Callback URLs (MUST be outside auth middleware - PayU redirects user here)
 // These routes are accessible without authentication since PayU redirects the user's browser
-Route::any('/user/applications/ix/payment-success', [IxApplicationController::class, 'paymentSuccess'])->name('user.applications.ix.payment-success');
-
-Route::any('/user/applications/ix/payment-failure', [IxApplicationController::class, 'paymentFailure'])->name('user.applications.ix.payment-failure');
-
 // IRINN PayU Callback URLs (MUST be outside auth middleware)
 Route::any('/user/applications/irin/payment-success', [ApplicationController::class, 'paymentSuccess'])->name('user.applications.irin.payment-success');
 Route::any('/user/applications/irin/payment-failure', [ApplicationController::class, 'paymentFailure'])->name('user.applications.irin.payment-failure');
@@ -596,7 +433,7 @@ Route::any('/user/wallet/add-money/success', [\App\Http\Controllers\WalletContro
 Route::any('/user/wallet/add-money/failure', [\App\Http\Controllers\WalletController::class, 'addMoneyFailure'])->name('user.wallet.add-money-failure');
 
 // PayU S2S Webhook (must be outside auth middleware - PayU server calls this directly)
-Route::post('/payu/webhook', [IxApplicationController::class, 'handleWebhook'])->name('payu.webhook');
+Route::post('/payu/webhook', [\App\Http\Controllers\PayuWebhookController::class, 'handleWebhook'])->name('payu.webhook');
 
 // Application Routes
 Route::prefix('application')->name('application.')->middleware(['application'])->group(function () {
@@ -715,10 +552,9 @@ Route::post('/admin/reset-payment-status', function (Request $request) {
             ->with('payment_reset_error', 'Application not found with identifier: '.$identifier);
     }
 
-    // Only allow resetting IX applications
-    if ($application->application_type !== 'IX') {
+    if ($application->application_type !== 'IRINN') {
         return redirect()->route('admin.view-logs')
-            ->with('payment_reset_error', 'This tool only works for IX applications. Found application type: '.$application->application_type);
+            ->with('payment_reset_error', 'This tool only works for IRINN applications. Found application type: '.$application->application_type);
     }
 
     // Get application data

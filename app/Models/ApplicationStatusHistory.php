@@ -42,11 +42,43 @@ class ApplicationStatusHistory extends Model
 
         if ($this->changed_by_type === 'admin') {
             return \App\Models\Admin::find($this->changed_by_id);
-        } elseif ($this->changed_by_type === 'superadmin') {
+        }
+        if ($this->changed_by_type === 'superadmin') {
             return \App\Models\SuperAdmin::find($this->changed_by_id);
+        }
+        if ($this->changed_by_type === 'user') {
+            return Registration::find($this->changed_by_id);
         }
 
         return null;
+    }
+
+    /**
+     * Short label for who recorded this history entry (for user-facing timelines).
+     */
+    public function actorDescription(): string
+    {
+        $type = (string) ($this->changed_by_type ?? '');
+        if ($type === '' || $type === 'system' || (int) $this->changed_by_id === 0) {
+            return 'System';
+        }
+        if ($type === 'user') {
+            $reg = $this->changedBy();
+            if ($reg instanceof Registration && filled($reg->fullname)) {
+                return 'You ('.$reg->fullname.')';
+            }
+
+            return 'You (applicant)';
+        }
+        $actor = $this->changedBy();
+        if ($type === 'admin' && $actor) {
+            return 'Admin: '.($actor->name ?? 'Admin');
+        }
+        if ($type === 'superadmin' && $actor) {
+            return 'Super admin: '.($actor->name ?? 'Super admin');
+        }
+
+        return ucfirst($type ?: 'System');
     }
 
     /**
@@ -82,6 +114,12 @@ class ApplicationStatusHistory extends Model
             'finance_approved' => 'Approved by Finance (Technical)',
             'finance_review' => 'Sent back to Finance',
             'processor_review' => 'Sent back to Processor',
+            // IRINN workflow (simplified)
+            'helpdesk' => 'Helpdesk',
+            'hostmaster' => 'Hostmaster',
+            'billing' => 'Billing',
+            'billing_approved' => 'Billing approved',
+            'resubmission_requested' => 'Resubmission requested',
         ];
     }
 
@@ -121,6 +159,9 @@ class ApplicationStatusHistory extends Model
             }
             if (stripos($notes, 'Service activated') !== false) {
                 return 'Service Activated';
+            }
+            if (stripos($notes, 'resubmission') !== false || stripos($notes, 'resubmit') !== false) {
+                return 'Resubmission update';
             }
         }
 
