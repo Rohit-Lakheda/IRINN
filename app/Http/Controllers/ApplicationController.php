@@ -180,6 +180,13 @@ class ApplicationController extends Controller
                 ->latest()
                 ->first();
 
+            // If admin approved email/mobile profile update, allow user to submit it from this page.
+            $approvedProfileUpdateRequest = $user->profileUpdateRequests()
+                ->where('status', 'approved')
+                ->whereNull('submitted_at')
+                ->latest()
+                ->first();
+
             if ($application->application_type === 'IRINN') {
                 IrinnApplicationDisplayEnricher::enrich($application);
             } elseif (! $application->registration_details) {
@@ -250,7 +257,7 @@ class ApplicationController extends Controller
                 }
             }
 
-            return response()->view('user.applications.show', compact('user', 'application', 'pendingPlanChange', 'approvedPlanChange', 'pendingGstUpdateRequest'))
+            return response()->view('user.applications.show', compact('user', 'application', 'pendingPlanChange', 'approvedPlanChange', 'pendingGstUpdateRequest', 'approvedProfileUpdateRequest'))
                 ->header('Cache-Control', 'no-cache, no-store, max-age=0, must-revalidate')
                 ->header('Pragma', 'no-cache')
                 ->header('Expires', 'Fri, 01 Jan 1990 00:00:00 GMT');
@@ -3239,9 +3246,9 @@ class ApplicationController extends Controller
             'irinn_br_mobile' => $request->input('irinn_br_mobile'),
             'irinn_asn_required' => $request->has('irinn_asn_required'),
             'irinn_ipv4_resource_size' => $request->input('irinn_ipv4_resource_size'),
-            'irinn_ipv4_resource_addresses' => $request->filled('irinn_ipv4_resource_addresses') ? (int) $request->input('irinn_ipv4_resource_addresses') : null,
+            'irinn_ipv4_resource_addresses' => $request->filled('irinn_ipv4_resource_addresses') ? (string) $request->input('irinn_ipv4_resource_addresses') : null,
             'irinn_ipv6_resource_size' => $request->input('irinn_ipv6_resource_size'),
-            'irinn_ipv6_resource_addresses' => $request->filled('irinn_ipv6_resource_addresses') ? (int) $request->input('irinn_ipv6_resource_addresses') : null,
+            'irinn_ipv6_resource_addresses' => $request->filled('irinn_ipv6_resource_addresses') ? (string) $request->input('irinn_ipv6_resource_addresses') : null,
             'irinn_resource_fee_amount' => $feeRaw !== null && $feeRaw !== '' ? (float) $feeRaw : null,
             'irinn_upstream_provider_name' => $request->input('irinn_upstream_provider_name'),
             'irinn_upstream_as_number' => $request->input('irinn_upstream_as_number'),
@@ -3452,9 +3459,9 @@ class ApplicationController extends Controller
             'irinn_br_mobile' => $request->input('irinn_br_mobile'),
             'irinn_asn_required' => $request->has('irinn_asn_required'),
             'irinn_ipv4_resource_size' => $request->input('irinn_ipv4_resource_size'),
-            'irinn_ipv4_resource_addresses' => $request->filled('irinn_ipv4_resource_addresses') ? (int) $request->input('irinn_ipv4_resource_addresses') : null,
+            'irinn_ipv4_resource_addresses' => $request->filled('irinn_ipv4_resource_addresses') ? (string) $request->input('irinn_ipv4_resource_addresses') : null,
             'irinn_ipv6_resource_size' => $request->input('irinn_ipv6_resource_size'),
-            'irinn_ipv6_resource_addresses' => $request->filled('irinn_ipv6_resource_addresses') ? (int) $request->input('irinn_ipv6_resource_addresses') : null,
+            'irinn_ipv6_resource_addresses' => $request->filled('irinn_ipv6_resource_addresses') ? (string) $request->input('irinn_ipv6_resource_addresses') : null,
             'irinn_resource_fee_amount' => $feeRaw !== null && $feeRaw !== '' ? (float) $feeRaw : null,
             'irinn_upstream_provider_name' => $request->input('irinn_upstream_provider_name'),
             'irinn_upstream_as_number' => $request->input('irinn_upstream_as_number'),

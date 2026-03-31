@@ -41,7 +41,6 @@ class IpPricing extends Model
         'effective_from' => 'date',
         'effective_until' => 'date',
         'is_active' => 'boolean',
-        'addresses' => 'integer',
         'log_base' => 'integer',
     ];
 
@@ -82,13 +81,18 @@ class IpPricing extends Model
         $result = [];
 
         foreach ($pricings as $pricing) {
+            $amount = $pricing->getComputedAmount();
             $result[$pricing->ip_type][$pricing->size] = [
                 'addresses' => $pricing->addresses,
-                'price' => $pricing->calculateFee(),
+                'amount' => $amount,
+                'price' => $pricing->getFinalPrice(),
                 'base_price' => $pricing->base_price,
                 'multiplier' => $pricing->multiplier,
                 'log_base' => $pricing->log_base,
                 'fixed_price' => $pricing->fixed_price,
+                'igst' => (float) ($pricing->igst ?? 0),
+                'cgst' => (float) ($pricing->cgst ?? 0),
+                'sgst' => (float) ($pricing->sgst ?? 0),
             ];
         }
 
@@ -118,11 +122,12 @@ class IpPricing extends Model
         $result = [];
 
         foreach ($pricings as $pricing) {
+            $amount = $pricing->getComputedAmount();
             $result[$pricing->ip_type][$pricing->size] = [
                 'id' => $pricing->id,
                 'size' => $pricing->size,
                 'addresses' => $pricing->addresses,
-                'amount' => (float) ($pricing->amount ?? 0),
+                'amount' => $amount,
                 'price' => $pricing->getFinalPrice(),
                 'gst_percentage' => (float) ($pricing->gst_percentage ?? 0),
                 'igst' => (float) ($pricing->igst ?? 0),
@@ -179,15 +184,92 @@ class IpPricing extends Model
      */
     public function getFinalPrice(): float
     {
-        if ($this->price !== null) {
-            return (float) $this->price;
+        $amount = $this->getComputedAmount();
+        $taxPercentage = $this->getTaxPercentage();
+
+        return round($amount + (($amount * $taxPercentage) / 100), 2);
+    }
+
+    /**
+     * Calculate billing amount from address count.
+     */
+    public function getComputedAmount(): float
+    {
+        return self::calculateAmountFromAddresses($this->ip_type, $this->addresses);
+    }
+
+    /**
+     * Tax percentage from configured GST fields.
+     */
+    public function getTaxPercentage(): float
+    {
+        // Prefer IGST when set, otherwise CGST+SGST, otherwise fallback GST percentage.
+        if ((float) ($this->igst ?? 0) > 0) {
+            return (float) $this->igst;
         }
 
-        if ($this->fixed_price !== null) {
-            return (float) $this->fixed_price;
+        $cgst = (float) ($this->cgst ?? 0);
+        $sgst = (float) ($this->sgst ?? 0);
+        if ($cgst > 0 || $sgst > 0) {
+            return $cgst + $sgst;
         }
 
-        // Fallback to calculated price for backward compatibility
-        return $this->calculateFee();
+        return (float) ($this->gst_percentage ?? 0);
+    }
+
+    /**
+     * Normalize large addresses from request/forms.
+     */
+    public static function normalizeAddresses(string|int|float|null $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $digits = preg_replace('/\D+/', '', (string) $value) ?? '';
+        if ($digits === '') {
+            return null;
+        }
+
+        $digits = ltrim($digits, '0');
+
+        return $digits === '' ? '0' : $digits;
+    }
+
+    /**
+     * Human-friendly formatting for huge integer-like address counts.
+     */
+    public static function formatAddressCount(string|int|float|null $value): string
+    {
+        $normalized = self::normalizeAddresses($value);
+        if ($normalized === null) {
+            return '0';
+        }
+
+        return preg_replace('/\B(?=(\d{3})+(?!\d))/', ',', $normalized) ?? $normalized;
+    }
+
+    /**
+     * Core amount formula from addresses.
+     */
+    public static function calculateAmountFromAddresses(string $ipType, string|int|float|null $addresses): float
+    {
+        $normalized = self::normalizeAddresses($addresses);
+        if ($normalized === null || $normalized === '0') {
+            return 0.0;
+        }
+
+        $addressFloat = (float) $normalized;
+        if (! is_finite($addressFloat) || $addressFloat <= 0) {
+            return 0.0;
+        }
+
+        if (strtolower($ipType) === 'ipv4') {
+            // Base: /24 = 256 addresses -> ₹27,500
+            return round(27500 * pow(1.35, log($addressFloat, 2) - 8), 2);
+        }
+
+        // Base: /48 = 2^80 addresses -> ₹24,199
+        return round(24199 * pow(1.35, log($addressFloat, 2) - 80), 2);
     }
 }

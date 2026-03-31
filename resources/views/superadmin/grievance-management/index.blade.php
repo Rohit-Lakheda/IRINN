@@ -7,7 +7,7 @@
     <div class="d-flex justify-content-between align-items-center flex-wrap mb-2">
         <div>
             <h2 class="mb-0 border-0">Grievance Management</h2>
-            <p class="text-muted mb-1">Manage grievance categories, subcategories, assignments, and transfer rules.</p>
+            <p class="text-muted mb-1">Manage grievance categories, subcategories, assignments, and transfer rules for IRINN roles (Helpdesk, Hostmaster, Billing).</p>
         </div>
         <div class="d-flex gap-2 flex-wrap">
             <a href="{{ route('superadmin.dashboard') }}" class="btn btn-primary text-white">
@@ -339,15 +339,15 @@
                         </div>
 
                         <div class="col-md-6">
-                            <label class="form-label fw-semibold">Escalate to IX Head after (hours)</label>
+                            <label class="form-label fw-semibold">Escalate to Level 1 role after (hours)</label>
                             <input type="number" min="0" max="720" class="form-control" name="ix_head_after_hours" value="{{ old('ix_head_after_hours', $escalationSetting->ix_head_after_hours ?? 6) }}" required>
                             <div class="small text-muted">Example: 6 hours</div>
                         </div>
 
                         <div class="col-md-6">
-                            <label class="form-label fw-semibold">Escalate to CEO after (hours)</label>
+                            <label class="form-label fw-semibold">Escalate to Level 2 role after (hours)</label>
                             <input type="number" min="0" max="720" class="form-control" name="ceo_after_hours" value="{{ old('ceo_after_hours', $escalationSetting->ceo_after_hours ?? 24) }}" required>
-                            <div class="small text-muted">Must be greater than or equal to IX Head hours.</div>
+                            <div class="small text-muted">Must be greater than or equal to Level 1 hours.</div>
                         </div>
 
                         <div class="col-md-6">
@@ -463,7 +463,7 @@
                                 @endfor
                             </div>
                             <div class="small text-muted mt-2">
-                                Example: Processor → Legal → IX Head → CEO. (Leave empty if no further forwarding needed.)
+                                Example: Helpdesk → Hostmaster → Billing. (Leave empty if no further forwarding needed.)
                             </div>
                         </div>
 

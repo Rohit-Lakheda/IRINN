@@ -70,7 +70,11 @@
                                     @endif
                                 </td>
                                     <td>
-                                        {{ $ticket->assignedAdmin ? $ticket->assignedAdmin->name : 'Not Assigned' }}
+                                        @if($ticket->assigned_role)
+                                            <span class="badge theme-bg-green text-capitalize">{{ ucfirst(str_replace('_', ' ', $ticket->assigned_role)) }}</span>
+                                        @else
+                                            <span class="text-muted">Not Assigned</span>
+                                        @endif
                                     </td>
                                     <td>{{ $ticket->created_at->format('d M Y, h:i A') }}</td>
                                     <td>

@@ -51,6 +51,49 @@ class IrinnAnnualInvoiceService
     }
 
     /**
+     * India financial year is April–March.
+     *
+     * This is kept only as a legacy fallback for older invoices that may not have
+     * `resources_as_on_iso` in invoice line meta.
+     */
+    public function fiscalYearEndMarchDateForInvoice(Carbon $invoiceDate): Carbon
+    {
+        $y = (int) $invoiceDate->year;
+        $m = (int) $invoiceDate->month;
+        $fyEndYear = $m >= 4 ? $y + 1 : $y;
+
+        return Carbon::create($fyEndYear, 3, 31, 0, 0, 0, 'Asia/Kolkata')->startOfDay();
+    }
+
+    /**
+     * Fiscal year bounds (April 1 - March 31) for a given date.
+     *
+     * @return array{start: Carbon, end: Carbon}
+     */
+    private function fiscalYearBounds(Carbon $on): array
+    {
+        $year = (int) $on->year;
+        $month = (int) $on->month;
+
+        $fyStartYear = $month >= 4 ? $year : $year - 1;
+        $fyEndYear = $fyStartYear + 1;
+
+        return [
+            'start' => Carbon::create($fyStartYear, 4, 1, 0, 0, 0, 'Asia/Kolkata')->startOfDay(),
+            'end' => Carbon::create($fyEndYear, 3, 31, 0, 0, 0, 'Asia/Kolkata')->startOfDay(),
+        ];
+    }
+
+    private function ensureIrinnResourcesAllocatedForAnnualInvoice(Application $application): void
+    {
+        if (! $application->irinn_resources_allocated || ! $application->billing_anchor_date) {
+            throw new \InvalidArgumentException(
+                'Hostmaster must confirm resource allocation and set the allocation date before generating or previewing annual invoices.'
+            );
+        }
+    }
+
+    /**
      * @return array{base: float, discount_percent: float, discount_amount: float, after_rebate: float, gst_amount: float, total: float}
      */
     public function calculateTotals(float $baseBeforeDiscount, float $discountPercent): array
@@ -87,14 +130,21 @@ class IrinnAnnualInvoiceService
             throw new \InvalidArgumentException('Annual base amount must be greater than zero.');
         }
 
+        $this->ensureIrinnResourcesAllocatedForAnnualInvoice($application);
+
         $application->loadMissing('user');
 
         $tz = 'Asia/Kolkata';
+        $allocationDate = $application->billing_anchor_date;
+        if (! $allocationDate instanceof Carbon) {
+            $allocationDate = Carbon::parse((string) $application->billing_anchor_date, $tz);
+        }
+        $allocationAsOnDate = $allocationDate->copy()->startOfDay();
+
         $invoiceDate = now($tz)->startOfDay();
         $dueDate = $invoiceDate->copy()->addMonth();
-        $asOnDate = $invoiceDate->copy()->subMonth()->endOfMonth();
 
-        $fy = $this->fiscalYearAndPrefix($invoiceDate);
+        $fy = $this->fiscalYearAndPrefix($allocationAsOnDate);
         $billingPeriod = $fy['fy'];
         $proposedInvoiceNumber = $this->nextInvoiceNumber($fy['prefix']);
 
@@ -132,7 +182,8 @@ class IrinnAnnualInvoiceService
             'proposed_invoice_number' => $proposedInvoiceNumber,
             'invoice_date' => $invoiceDate->format('d/m/Y'),
             'due_date' => $dueDate->format('d/m/Y'),
-            'as_on_for_resources' => $asOnDate->format('d F Y'),
+            'as_on_for_resources' => $allocationAsOnDate->format('d F Y'),
+            'allocation_date' => $allocationAsOnDate->format('d F Y'),
             'seller_legal_name' => 'NATIONAL INTERNET EXCHANGE OF INDIA',
             'seller_gstin' => '07AABCN9308A1ZT',
             'seller_address' => '9th Floor, B-Wing, Statesman House, 148, Barakhamba Road, New Delhi-110001',
@@ -181,12 +232,19 @@ class IrinnAnnualInvoiceService
             throw new \InvalidArgumentException('Annual base amount must be greater than zero.');
         }
 
+        $this->ensureIrinnResourcesAllocatedForAnnualInvoice($application);
+
         $tz = 'Asia/Kolkata';
+        $allocationDate = $application->billing_anchor_date;
+        if (! $allocationDate instanceof Carbon) {
+            $allocationDate = Carbon::parse((string) $application->billing_anchor_date, $tz);
+        }
+        $asOnDate = $allocationDate->copy()->startOfDay();
+
         $invoiceDate = now($tz)->startOfDay();
         $dueDate = $invoiceDate->copy()->addMonth();
-        $asOnDate = $invoiceDate->copy()->subMonth()->endOfMonth();
 
-        $fy = $this->fiscalYearAndPrefix($invoiceDate);
+        $fy = $this->fiscalYearAndPrefix($asOnDate);
         $billingPeriod = $fy['fy'];
         $invoiceNumber = $this->nextInvoiceNumber($fy['prefix']);
 
@@ -216,8 +274,9 @@ class IrinnAnnualInvoiceService
             ],
         ];
 
-        $billingStart = $invoiceDate->copy()->startOfYear();
-        $billingEnd = $invoiceDate->copy()->endOfYear();
+        $bounds = $this->fiscalYearBounds($asOnDate);
+        $billingStart = $bounds['start'];
+        $billingEnd = $bounds['end'];
 
         $invoice = Invoice::create([
             'application_id' => $application->id,
@@ -235,6 +294,8 @@ class IrinnAnnualInvoiceService
                     'discount_amount' => $amounts['discount_amount'],
                     'ipv4_addresses' => $ipv4,
                     'ipv6_addresses' => $ipv6,
+                    'resources_as_on_iso' => $asOnDate->toDateString(),
+                    'billing_anchor_date' => $application->billing_anchor_date?->toDateString(),
                 ],
             ]),
             'amount' => $amounts['after_rebate'],
@@ -330,11 +391,18 @@ class IrinnAnnualInvoiceService
 
     public function generateAndStorePdf(Application $application, Invoice $invoice, ?Carbon $asOnDate = null): void
     {
-        $asOn = $asOnDate ?? ($invoice->invoice_date
-            ? Carbon::parse($invoice->invoice_date, 'Asia/Kolkata')->subMonth()->endOfMonth()
-            : now('Asia/Kolkata')->subMonth()->endOfMonth());
-
         $meta = is_array($invoice->line_items) ? ($invoice->line_items['_irinn_meta'] ?? []) : [];
+
+        if (! empty($meta['resources_as_on_iso'])) {
+            $asOn = Carbon::parse((string) $meta['resources_as_on_iso'], 'Asia/Kolkata')->startOfDay();
+        } elseif ($asOnDate instanceof Carbon) {
+            $asOn = $asOnDate->copy()->startOfDay();
+        } else {
+            $invoiceDate = $invoice->invoice_date
+                ? Carbon::parse($invoice->invoice_date, 'Asia/Kolkata')->startOfDay()
+                : now('Asia/Kolkata')->startOfDay();
+            $asOn = $this->fiscalYearEndMarchDateForInvoice($invoiceDate);
+        }
         $ipv4 = (int) ($meta['ipv4_addresses'] ?? $application->irinn_ipv4_resource_addresses ?? 0);
         $ipv6 = (int) ($meta['ipv6_addresses'] ?? $application->irinn_ipv6_resource_addresses ?? 0);
 

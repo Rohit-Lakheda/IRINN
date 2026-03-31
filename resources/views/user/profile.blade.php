@@ -150,51 +150,11 @@
                         </div>
                     @endif
 
-                    <div class="row mt-4">
-                        <div class="col-12">
-                            <h6 class="fw-semibold mb-3" style="color: #2c3e50;">Portal GST verification (KYC)</h6>
-                            <table class="table table-borderless">
-                                <tr>
-                                    <th width="28%" style="color: #2c3e50; font-weight: 600;">GSTIN</th>
-                                    <td>
-                                        <span>{{ $gstin ?? 'N/A' }}</span>
-                                        @if($gstVerified ?? false)
-                                            <span class="badge bg-success ms-2">Verified</span>
-                                        @endif
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <th style="color: #2c3e50; font-weight: 600;">Business name</th>
-                                    <td>{{ $gstVerification?->legal_name ?? 'N/A' }}</td>
-                                </tr>
-                                <tr>
-                                    <th style="color: #2c3e50; font-weight: 600;">Entity type</th>
-                                    <td>{{ $gstVerification?->constitution_of_business ?? 'N/A' }}</td>
-                                </tr>
-                                <tr>
-                                    <th style="color: #2c3e50; font-weight: 600;">Registration date</th>
-                                    <td>{{ $gstVerification?->registration_date ? date('d M Y', strtotime($gstVerification?->registration_date)) : 'N/A' }}</td>
-                                </tr>
-                                <tr>
-                                    <th style="color: #2c3e50; font-weight: 600;">GST type</th>
-                                    <td>{{ $gstVerification?->gst_type ?? 'N/A' }}</td>
-                                </tr>
-                                <tr>
-                                    <th style="color: #2c3e50; font-weight: 600;">Primary address</th>
-                                    <td>{{ $gstVerification?->primary_address ?? 'N/A' }}</td>
-                                </tr>
-                            </table>
-                        </div>
-                    </div>
-                    
                     <div class="mt-4 pt-3 border-top border-c-yellow">
                         <p class="text-muted small mb-3">
-                            <strong>Contact updates:</strong> Only your <strong>registered email</strong> and <strong>registered mobile number</strong> can be changed directly in the portal.
-                            Use <strong>Request profile update</strong> below if you need admin approval for other changes (for example corrections that are not limited to email or mobile).
+                            <strong>Contact updates:</strong> To change your <strong>registered email</strong> or <strong>registered mobile number</strong>, you must first submit a <strong>profile update request</strong>.
+                            Once admin approves it, you can update your details and re-verify them with OTP (same as registration).
                         </p>
-                        <a href="{{ route('user.profile.edit') }}" class="btn btn-outline-primary mb-3 me-2">
-                            Update email &amp; mobile
-                        </a>
                         @if($pendingRequest)
                             <div class="alert alert-info border-0 shadow-sm" style="border-radius: 12px;">
                                 <div class="d-flex align-items-start">

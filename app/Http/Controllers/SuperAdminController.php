@@ -129,6 +129,15 @@ class SuperAdminController extends Controller
             })
                 ->count();
 
+            // IRINN workflow stage counts (helpdesk -> hostmaster -> billing -> billing_approved)
+            $irinnStageBaseQuery = Application::where('application_type', 'IRINN')
+                ->whereNotIn('status', ['draft', 'rejected']);
+
+            $irinnHelpdeskCount = (clone $irinnStageBaseQuery)->where('irinn_current_stage', 'helpdesk')->count();
+            $irinnHostmasterCount = (clone $irinnStageBaseQuery)->where('irinn_current_stage', 'hostmaster')->count();
+            $irinnBillingCount = (clone $irinnStageBaseQuery)->where('irinn_current_stage', 'billing')->count();
+            $irinnBillingApprovedCount = (clone $irinnStageBaseQuery)->where('irinn_current_stage', 'billing_approved')->count();
+
             $ixProcessorApproved = $ixProcessorPending = 0;
             $ixLegalApproved = $ixLegalPending = 0;
             $ixHeadApproved = $ixHeadPending = 0;
@@ -345,7 +354,13 @@ class SuperAdminController extends Controller
                 'openGrievances',
                 'pendingGrievances',
                 'closedGrievances',
-                // New IX Workflow Roles
+                // IRINN workflow stages
+                'irinnHelpdeskCount',
+                'irinnHostmasterCount',
+                'irinnBillingCount',
+                'irinnBillingApprovedCount',
+
+                // Legacy IX workflow roles (no longer shown in dashboard)
                 'ixProcessorApproved',
                 'ixProcessorPending',
                 'ixLegalApproved',

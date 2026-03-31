@@ -256,13 +256,24 @@
                             <div class="alert alert-success small mb-3">
                                 Billing approval is complete. Generate the annual resource invoice below; users pay after logging in to the portal.
                             </div>
+
+                            @if(! $application->irinn_resources_allocated || ! $application->billing_anchor_date)
+                                <div class="alert alert-warning small mb-3 mb-md-2">
+                                    Annual invoice preview and generation are blocked until <strong>hostmaster</strong> confirms resource allocation and sets the allocation date.
+                                </div>
+                            @else
+                                <div class="alert alert-info small mb-3 mb-md-2">
+                                    Resources were allocated on <strong>{{ $application->billing_anchor_date->format('d F Y') }}</strong> (used for invoice "as on" date).
+                                </div>
+                            @endif
+
                             <a href="{{ route('admin.invoices.index') }}" class="btn btn-sm btn-outline-primary irin-btn-rounded mb-2">Open all invoices</a>
                         @endif
 
                         @if(session('admin_selected_role') === 'billing' && in_array($irinnStatus, ['billing', 'billing_approved'], true))
                             <div class="irinn-divider my-3"></div>
                             <h6 class="fw-semibold mb-2">Annual IRINN billing</h6>
-                            <p class="small text-muted mb-2">Discount % applies to <strong>every</strong> annual invoice for this application. Due date is one month after the invoice date. E-invoice (IRN/ACK) is requested only when the applicant provided a billing GSTIN.</p>
+                            <p class="small text-muted mb-2">Discount % applies to <strong>every</strong> annual invoice for this application. Due date is one month after the invoice date. The PDF line for resource holding uses the <strong>hostmaster allocation date</strong>. E-invoice (IRN/ACK) is requested only when the applicant provided a billing GSTIN.</p>
 
                             <form method="POST" action="{{ route('admin.applications.irinn.billing-discount', $application->id) }}" class="mb-3">
                                 @csrf
@@ -282,10 +293,16 @@
                                            value="{{ old('annual_base_amount', $application->irinn_resource_fee_amount) }}" required>
                                 </div>
                                 @if($irinnStatus === 'billing_approved')
-                                    <a href="#" class="btn btn-sm btn-outline-secondary irin-btn-rounded" id="irinn-preview-annual-link">Preview invoice</a>
+                                    @php $irinnCanAnnualInvoice = $application->irinn_resources_allocated && $application->billing_anchor_date; @endphp
+                                    <a href="#"
+                                       class="btn btn-sm btn-outline-secondary irin-btn-rounded {{ $irinnCanAnnualInvoice ? '' : 'disabled' }}"
+                                       id="irinn-preview-annual-link"
+                                       data-preview-url="{{ route('admin.applications.irinn.preview-annual-invoice', $application->id) }}"
+                                       data-can-annual-invoice="{{ $irinnCanAnnualInvoice ? '1' : '0' }}"
+                                       @if(! $irinnCanAnnualInvoice) aria-disabled="true" @endif>Preview invoice</a>
                                     <form id="irinn-generate-annual-form" method="POST" action="{{ route('admin.applications.irinn.generate-annual-invoice', $application->id) }}" class="d-inline">
                                         @csrf
-                                        <button type="submit" class="btn btn-sm btn-primary irin-btn-rounded" onclick="return confirm('Generate annual invoice for the current financial year? The user will be emailed when possible.');">Generate annual invoice</button>
+                                        <button type="submit" class="btn btn-sm btn-primary irin-btn-rounded" onclick="return confirm('Generate annual invoice for the financial year based on the hostmaster allocation date? The user will be emailed when possible.');" @if(! $irinnCanAnnualInvoice) disabled @endif>Generate annual invoice</button>
                                     </form>
                                 @else
                                     <p class="small text-muted mb-0">Generation unlocks after <strong>billing approval</strong>. You can still set the discount above.</p>
@@ -364,9 +381,14 @@
                                         var base = document.getElementById('irinn-annual-base-input');
                                         var link = document.getElementById('irinn-preview-annual-link');
                                         if (!base || !link) return;
-                                        var previewUrl = @json(route('admin.applications.irinn.preview-annual-invoice', $application->id));
+                                        var previewUrl = link.dataset.previewUrl;
+                                        var canAnnualInvoice = link.dataset.canAnnualInvoice === '1';
                                         link.addEventListener('click', function (e) {
                                             e.preventDefault();
+                                            if (!canAnnualInvoice) {
+                                                alert('Hostmaster must confirm resource allocation and set the allocation date first.');
+                                                return;
+                                            }
                                             var v = base.value;
                                             if (!v || parseFloat(v) <= 0) {
                                                 alert('Enter a valid annual base amount first.');
@@ -379,9 +401,38 @@
                             @endpush
                         @endif
 
-                        @if(session('admin_selected_role') === 'hostmaster' && $irinnStatus === 'billing_approved')
+                        @if(session('admin_selected_role') === 'hostmaster' && $irinnStatus === 'billing_approved' && ! $application->irinn_resources_allocated)
+                            <div class="border rounded p-3 bg-light mt-3">
+                                <h6 class="fw-semibold mb-2">Resource allocation</h6>
+                                <p class="small text-muted mb-3">
+                                    Confirm when resources are allocated for this member. The <strong>allocation date</strong> is stored for billing and is used as the PDF "resources holding as on" date.
+                                </p>
+                                <form method="POST" action="{{ route('admin.applications.irinn.allocate-resources', $application->id) }}" class="row g-3 align-items-end">
+                                    @csrf
+                                    <div class="col-12">
+                                        <div class="form-check">
+                                            <input type="hidden" name="irinn_resources_allocated" value="0">
+                                            <input class="form-check-input" type="checkbox" name="irinn_resources_allocated" value="1" id="irinn-resources-allocated"
+                                                   {{ old('irinn_resources_allocated', $application->irinn_resources_allocated) ? 'checked' : '' }}>
+                                            <label class="form-check-label" for="irinn-resources-allocated">Resources allocated</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-auto">
+                                        <label class="form-label small mb-0" for="irinn-billing-anchor-date">Allocation date</label>
+                                        <input type="date" name="billing_anchor_date" id="irinn-billing-anchor-date" class="form-control form-control-sm"
+                                               value="{{ old('billing_anchor_date', $application->billing_anchor_date?->format('Y-m-d')) }}">
+                                        @error('billing_anchor_date')<small class="text-danger d-block">{{ $message }}</small>@enderror
+                                    </div>
+                                    <div class="col-auto">
+                                        <button type="submit" class="btn btn-sm btn-primary irin-btn-rounded">Save</button>
+                                    </div>
+                                </form>
+                            </div>
+                        @endif
+
+                        @if(session('admin_selected_role') === 'hostmaster' && $irinnStatus === 'billing_approved' && $application->irinn_resources_allocated && $application->billing_anchor_date)
                             <div class="alert alert-info small mb-0 mt-3">
-                                Resource allocation for this application will be added in a follow-up step.
+                                Resources allocation confirmed on <strong>{{ $application->billing_anchor_date->format('d F Y') }}</strong>.
                             </div>
                         @endif
 

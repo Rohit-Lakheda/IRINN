@@ -12,7 +12,7 @@
                     <p class="mb-2">Welcome back, <strong>{{ $superAdmin->name ?? 'Super Admin' }}</strong>!</p>
                 </div>
                 <div>
-                    <a href="{{ route('superadmin.backend-data-entry') }}" class="btn btn-primary">
+                    <a href="{{ route('superadmin.applications.index') }}" class="btn btn-primary">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" class="me-1">
                             <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
                             <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/>
@@ -49,7 +49,7 @@
         </div>
     </div>
 
-    <!-- IX Points Visibility Section -->
+    {{-- IX Points Visibility Section (removed: IX is no longer part of this portal)
     <div class="row g-4 mb-4">
         <div class="col-12">
             <div class="card shadow-sm" style="border-radius: 16px;">
@@ -59,7 +59,7 @@
                 <div class="card-body p-3">
                     <div class="row g-3">
                         <div class="col-md-4">
-                            <a href="{{ route('superadmin.ix-points') }}" class="text-decoration-none">
+                            <a href="{{ route('superadmin.ip-pricing.index') }}" class="text-decoration-none">
                                 <div class="card border-c-blue shadow-sm" style="border-radius: 12px; transition: transform 0.2s, box-shadow 0.2s; cursor: pointer;" 
                                      onmouseover="this.style.transform='translateY(-5px)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.15)'"
                                      onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 8px rgba(0,0,0,0.1)'">
@@ -80,7 +80,7 @@
                             </a>
                         </div>
                         <div class="col-md-4">
-                            <a href="{{ route('superadmin.ix-points', ['node_type' => 'edge']) }}" class="text-decoration-none">
+                            <a href="{{ route('superadmin.ip-pricing.index') }}?node_type=edge" class="text-decoration-none">
                                 <div class="card border-c-blue shadow-sm" style="border-radius: 12px; transition: transform 0.2s, box-shadow 0.2s; cursor: pointer;" 
                                      onmouseover="this.style.transform='translateY(-5px)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.15)'"
                                      onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 8px rgba(0,0,0,0.1)'">
@@ -101,7 +101,7 @@
                             </a>
                         </div>
                         <div class="col-md-4">
-                            <a href="{{ route('superadmin.ix-points', ['node_type' => 'metro']) }}" class="text-decoration-none">
+                            <a href="{{ route('superadmin.ip-pricing.index') }}?node_type=metro" class="text-decoration-none">
                                 <div class="card border-c-blue shadow-sm" style="border-radius: 12px; transition: transform 0.2s, box-shadow 0.2s; cursor: pointer;" 
                                      onmouseover="this.style.transform='translateY(-5px)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.15)'"
                                      onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 8px rgba(0,0,0,0.1)'">
@@ -126,6 +126,8 @@
             </div>
         </div>
     </div>
+
+    --}}
 
     <!-- Payment Summary Section -->
     <div class="row g-4 mb-4">
@@ -516,7 +518,7 @@
                 </div>
                 <div class="card-body">
                     <div class="d-flex flex-wrap gap-3">
-                        <a href="{{ route('superadmin.backend-data-entry') }}" class="btn btn-primary fw-semibold text-white" style="border-radius: 10px;">
+                        <a href="{{ route('superadmin.applications.index') }}" class="btn btn-primary fw-semibold text-white" style="border-radius: 10px;">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="me-2" viewBox="0 0 16 16">
                                 <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
                                 <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/>
@@ -632,74 +634,33 @@
                         <table class="table table-bordered table-hover mb-0" style="border-radius: 8px; overflow: hidden;">
                             <thead class="text-nowrap">
                                 <tr>
-                                    <th style="min-width: 150px;">Role</th>
-                                    <th class="text-center" style="min-width: 150px;">Approved</th>
-                                    <th class="text-center" style="min-width: 150px;">Pending</th>
+                                    <th style="min-width: 180px;">IRINN Stage</th>
+                                    <th class="text-center" style="min-width: 150px;">Applications</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {{-- New IX Workflow Roles --}}
                                 <tr class="align-middle">
-                                    <td class="fw-semibold text-black">IX Processor</td>
+                                    <td class="fw-semibold text-black">Helpdesk</td>
                                     <td class="fw-semibold text-black text-center">
-                                        <span class="text-success fs-6 fw-semibold justify-content-center">{{ $ixProcessorApproved ?? 0 }}</span>
-                                    </td>
-                                    <td class="fw-semibold text-black text-center">
-                                        <span class="text-gold fs-6 fw-semibold justify-content-center">{{ $ixProcessorPending ?? 0 }}</span>
+                                        <span class="text-success fs-6 fw-semibold justify-content-center">{{ $irinnHelpdeskCount ?? 0 }}</span>
                                     </td>
                                 </tr>
-                                <tr>
-                                    <td class="fw-semibold text-black">IX Legal</td>
+                                <tr class="align-middle">
+                                    <td class="fw-semibold text-black">Hostmaster</td>
                                     <td class="fw-semibold text-black text-center">
-                                        <span class="text-success fs-6 fw-semibold justify-content-center">{{ $ixLegalApproved ?? 0 }}</span>
-                                    </td>
-                                    <td class="fw-semibold text-black text-center">
-                                        <span class="text-gold fs-6 fw-semibold justify-content-center">{{ $ixLegalPending ?? 0 }}</span>
+                                        <span class="text-primary fs-6 fw-semibold justify-content-center">{{ $irinnHostmasterCount ?? 0 }}</span>
                                     </td>
                                 </tr>
-                                <tr>
-                                    <td class="fw-semibold text-black">IX Head</td>
+                                <tr class="align-middle">
+                                    <td class="fw-semibold text-black">Billing</td>
                                     <td class="fw-semibold text-black text-center">
-                                        <span class="text-success fs-6 fw-semibold justify-content-center">{{ $ixHeadApproved ?? 0 }}</span>
-                                    </td>
-                                    <td class="fw-semibold text-black text-center">
-                                        <span class="text-gold fs-6 fw-semibold justify-content-center">{{ $ixHeadPending ?? 0 }}</span>
+                                        <span class="text-gold fs-6 fw-semibold justify-content-center">{{ $irinnBillingCount ?? 0 }}</span>
                                     </td>
                                 </tr>
-                                <tr>
-                                    <td class="fw-semibold text-black">CEO</td>
+                                <tr class="align-middle">
+                                    <td class="fw-semibold text-black">Billing Approved</td>
                                     <td class="fw-semibold text-black text-center">
-                                        <span class="text-success fs-6 fw-semibold justify-content-center">{{ $ceoApproved ?? 0 }}</span>
-                                    </td>
-                                    <td class="fw-semibold text-black text-center">
-                                        <span class="text-gold fs-6 fw-semibold justify-content-center">{{ $ceoPending ?? 0 }}</span>
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <td class="fw-semibold text-black">Nodal Officer</td>
-                                    <td class="fw-semibold text-black text-center">
-                                        <span class="text-success fs-6 fw-semibold justify-content-center">{{ $nodalOfficerApproved ?? 0 }}</span>
-                                    </td>
-                                    <td class="fw-semibold text-black text-center">
-                                        <span class="text-gold fs-6 fw-semibold justify-content-center">{{ $nodalOfficerPending ?? 0 }}</span>
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <td class="fw-semibold text-black">IX Tech Team</td>
-                                    <td class="fw-semibold text-black text-center">
-                                        <span class="text-success fs-6 fw-semibold justify-content-center">{{ $ixTechTeamApproved ?? 0 }}</span>
-                                    </td>
-                                    <td class="fw-semibold text-black text-center">
-                                        <span class="text-gold fs-6 fw-semibold justify-content-center">{{ $ixTechTeamPending ?? 0 }}</span>
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <td class="fw-semibold text-black">IX Account</td>
-                                    <td class="fw-semibold text-black text-center">
-                                        <span class="text-success fs-6 fw-semibold justify-content-center">{{ $ixAccountApproved ?? 0 }}</span>
-                                    </td>
-                                    <td class="fw-semibold text-black text-center">
-                                        <span class="text-gold fs-6 fw-semibold justify-content-center">{{ $ixAccountPending ?? 0 }}</span>
+                                        <span class="text-success fs-6 fw-semibold justify-content-center">{{ $irinnBillingApprovedCount ?? 0 }}</span>
                                     </td>
                                 </tr>
                             </tbody>
@@ -863,7 +824,7 @@
                                 </thead>
                                 <tbody>
                                     @foreach($recentMessages as $message)
-                                    <tr class="align-middle" style="cursor: pointer;" onclick="window.location='{{ route('superadmin.messages.show', $message->id) }}'">
+                                    <tr class="align-middle" style="cursor: pointer;" data-row-url="{{ route('superadmin.messages.show', $message->id) }}">
                                         <td>
                                             <a href="{{ route('superadmin.users.show', $message->user_id) }}" class="text-decoration-none" style="color: #2c3e50; font-weight: 500;" onclick="event.stopPropagation();">
                                                 {{ $message->user->fullname }}
@@ -966,6 +927,15 @@ document.addEventListener('DOMContentLoaded', function() {
         
         collapseElement.addEventListener('hidden.bs.collapse', function() {
             headerElement.setAttribute('aria-expanded', 'false');
+        });
+    });
+
+    // Make recent message rows clickable without embedding Blade inside JS.
+    document.querySelectorAll('[data-row-url]').forEach(function(row) {
+        row.addEventListener('click', function() {
+            const url = row.getAttribute('data-row-url');
+            if (!url) return;
+            window.location = url;
         });
     });
 });

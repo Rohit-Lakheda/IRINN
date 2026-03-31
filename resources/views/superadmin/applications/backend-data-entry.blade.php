@@ -7,7 +7,7 @@
     <!-- Page Header -->
     <div class="mb-4">
         <h2 class="mb-0 border-0">Bulk Approve Applications</h2>
-        <p class="text-muted mb-1">Select and approve applications to IX Account stage for invoice generation</p>
+        <p class="text-muted mb-1">Select and approve applications to Billing Approved stage for invoice generation</p>
         <div class="accent-line"></div>
     </div>
 
@@ -56,7 +56,7 @@
             <div class="col-12">
                 <div class="card border-c-blue shadow-sm" style="border-radius: 16px;">
                     <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center flex-wrap gap-2" style="border-radius: 16px 16px 0 0;">
-                        <h5 class="mb-0">All IX Applications</h5>
+                        <h5 class="mb-0">All IRINN Applications</h5>
                         <div class="d-flex gap-2 flex-wrap">
                             <button type="button" class="btn border-white text-blue btn-sm" onclick="selectAll()">
                                 <i class="bi bi-check-square"></i> Select All
@@ -160,7 +160,7 @@
     <div class="alert alert-info mt-3">
         <h6 class="alert-heading text-blue d-flex"><i class="bi bi-info-circle me-2"></i> Bulk Approval Information</h6>
         <ul class="mb-0 ps-3">
-            <li>Applications will be approved from <strong>IX Processor</strong> directly to <strong>IX Account</strong> stage</li>
+            <li>Applications will be transitioned to the <strong>Billing Approved</strong> stage for invoice generation.</li>
             <li>Status will be changed to <strong>ip_assigned</strong> (ready for invoice generation)</li>
             <li>Service activation date will be set to <strong>2026-01-01</strong> for all approved applications</li>
             <li>Readonly details (IP, Customer ID, Membership ID, Port Capacity, etc.) will be saved from application data</li>

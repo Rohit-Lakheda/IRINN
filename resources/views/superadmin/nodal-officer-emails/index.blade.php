@@ -49,7 +49,7 @@
                                 @error('name')
                                     <div class="text-danger small mt-1">{{ $message }}</div>
                                 @enderror
-                                <small class="text-muted">Select from IX locations</small>
+                                <small class="text-muted">Select from locations</small>
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label fw-semibold">Email Address <span class="text-danger">*</span></label>
@@ -128,7 +128,12 @@
                                                 <form action="{{ route('superadmin.nodal-officer-emails.toggle-status', $email->id) }}" method="POST" class="d-inline">
                                                     @csrf
                                                     @method('PATCH')
-                                                    <button type="submit" class="btn btn-sm btn-{{ $email->is_active ? 'warning' : 'success' }}" onclick="return confirm('{{ $email->is_active ? 'Deactivate' : 'Activate' }} this email?')">
+                                                    <button
+                                                        type="submit"
+                                                        class="btn btn-sm btn-{{ $email->is_active ? 'warning' : 'success' }}"
+                                                        data-confirm-text="{{ $email->is_active ? 'Deactivate' : 'Activate' }} this email?"
+                                                        onclick="return confirm(this.dataset.confirmText)"
+                                                    >
                                                         <i class="bi bi-{{ $email->is_active ? 'x-circle' : 'check-circle' }}"></i> {{ $email->is_active ? 'Deactivate' : 'Activate' }}
                                                     </button>
                                                 </form>
@@ -167,7 +172,7 @@
                                                                 @error('name')
                                                                     <div class="text-danger small mt-1">{{ $message }}</div>
                                                                 @enderror
-                                                                <small class="text-muted">Select from IX locations</small>
+                                                                <small class="text-muted">Select from locations</small>
                                                             </div>
                                                             <div class="mb-3">
                                                                 <label class="form-label fw-semibold">Email Address <span class="text-danger">*</span></label>

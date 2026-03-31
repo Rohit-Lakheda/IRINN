@@ -104,9 +104,31 @@
 
                 <!-- Current GST Details -->
                 @php
-                    $kycDetails = is_array($application->kyc_details) ? $application->kyc_details : [];
+                    $kycDetails = [];
+
+                    if ($application->application_type === 'IRINN') {
+                        // IRINN portal stores GST data directly on the application record (no user KYC profile dependency).
+                        $kycDetails = [
+                            'gstin' => $application->irinn_billing_gstin ?? null,
+                            'legal_name' => $application->irinn_billing_legal_name ?? null,
+                            'gst_pan' => $application->irinn_billing_pan ?? null,
+                            'billing_address' => $application->irinn_billing_address ?? null,
+                            'billing_pincode' => $application->irinn_billing_postcode ?? null,
+                            'gst_verified' => $gstVerified ?? false,
+                        ];
+                    } else {
+                        $kycDetails = is_array($application->kyc_details) ? $application->kyc_details : [];
+                    }
                 @endphp
-                <div id="currentGstDetailsSection" class="card border-0 shadow-sm mb-4" style="border-radius: 16px; @if(empty($kycDetails['gstin']) && empty($kycDetails['legal_name'])) display: none; @endif">
+                @php
+                    $shouldHideCurrentGstDetails = empty($kycDetails['gstin']) && empty($kycDetails['legal_name']);
+                @endphp
+
+                <div
+                    id="currentGstDetailsSection"
+                    class="card border-0 shadow-sm mb-4 {{ $shouldHideCurrentGstDetails ? 'd-none' : '' }}"
+                    style="border-radius: 16px;"
+                >
                     <div class="card-header bg-info text-white" style="border-radius: 16px 16px 0 0;">
                         <h5 class="mb-0" style="font-weight: 600;">Current GST Details</h5>
                     </div>
@@ -474,6 +496,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         // Show the section if it was hidden
+        currentSection.classList.remove('d-none');
         currentSection.style.display = 'block';
 
         // Format registration date

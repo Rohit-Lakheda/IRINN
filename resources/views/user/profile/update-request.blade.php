@@ -11,7 +11,7 @@
             </div>
             <div class="card-body">
                 <p class="alert alert-info small mb-4">
-                    <strong>Note:</strong> Your <strong>registered email</strong> and <strong>registered mobile number</strong> can be updated directly from your profile using <strong>Update email &amp; mobile</strong>. Use this request only for other changes that need admin review.
+                    <strong>Note:</strong> Only your <strong>registered email</strong> and <strong>registered mobile number</strong> can be updated (after admin approval, with OTP verification).
                 </p>
                 <p class="lead fs-6">
                     Please describe the changes you want to make to your profile. Once submitted, an admin will review your request and approve it if appropriate.

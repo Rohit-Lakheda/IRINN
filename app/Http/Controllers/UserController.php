@@ -1222,24 +1222,28 @@ class UserController extends Controller
                     ->with('error', 'You do not have permission to access this application.');
             }
 
-            // Get GSTIN from application's kyc_details column first, then application_data
-            // Do NOT use gst_verification table - only use application table columns
+            // Get GSTIN from application table columns (no user KYC profile dependency).
             $gstin = null;
             $gstVerified = false;
 
-            $kycDetails = is_array($application->kyc_details) ? $application->kyc_details : [];
-            if (isset($kycDetails['gstin'])) {
-                $gstin = $kycDetails['gstin'];
-                $gstVerified = $kycDetails['gst_verified'] ?? false;
+            if ($application->application_type === 'IRINN') {
+                $gstin = $application->irinn_billing_gstin ?? null;
             } else {
-                $applicationData = is_array($application->application_data) ? $application->application_data : [];
-                $gstin = $applicationData['gstin'] ?? null;
+                $kycDetails = is_array($application->kyc_details) ? $application->kyc_details : [];
+                if (isset($kycDetails['gstin'])) {
+                    $gstin = $kycDetails['gstin'];
+                    $gstVerified = $kycDetails['gst_verified'] ?? false;
+                } else {
+                    $applicationData = is_array($application->application_data) ? $application->application_data : [];
+                    $gstin = $applicationData['gstin'] ?? null;
+                }
             }
 
             // Get GST verification only for linking (not for displaying data)
             $gstVerification = null;
             if ($application->gst_verification_id) {
                 $gstVerification = GstVerification::find($application->gst_verification_id);
+                $gstVerified = $gstVerification ? (bool) $gstVerification->is_verified : $gstVerified;
             }
 
             return response()->view('user.applications.gst.edit', compact('user', 'application', 'gstin', 'gstVerified', 'gstVerification'))
@@ -1282,6 +1286,160 @@ class UserController extends Controller
 
             // Only update GSTIN if provided
             if (isset($validated['gstin'])) {
+                if ($application->application_type === 'IRINN') {
+                    $newGstin = strtoupper(trim((string) $validated['gstin']));
+                    $oldGstin = strtoupper(trim((string) ($application->irinn_billing_gstin ?? '')));
+                    $oldCompanyName = $application->irinn_billing_legal_name ?? null;
+
+                    $gstVerificationId = $validated['gst_verification_id'] ?? null;
+                    if (! $gstVerificationId) {
+                        return back()
+                            ->withErrors(['gstin' => 'Please verify GST before updating.'])
+                            ->withInput();
+                    }
+
+                    $gstVerification = GstVerification::find($gstVerificationId);
+                    if (! $gstVerification || (int) $gstVerification->user_id !== (int) $userId) {
+                        return back()
+                            ->withErrors(['gstin' => 'Invalid or unauthorized GST verification.'])
+                            ->withInput();
+                    }
+
+                    // We only update application columns after verification is completed.
+                    if (! $gstVerification->is_verified) {
+                        return back()
+                            ->withErrors(['gstin' => 'GST verification is still in progress. Please try again.'])
+                            ->withInput();
+                    }
+
+                    $newCompanyName = (string) ($gstVerification->legal_name ?? $gstVerification->trade_name ?? '');
+                    if ($newCompanyName === '') {
+                        return back()
+                            ->withErrors(['gstin' => 'GST verification did not return company name. Please try again.'])
+                            ->withInput();
+                    }
+
+                    // Old/new details stored for audit (mirrors GST change history structure).
+                    $oldKycDetails = [
+                        'gstin' => $oldGstin !== '' ? $oldGstin : null,
+                        'legal_name' => $oldCompanyName,
+                        'trade_name' => null,
+                        'billing_address' => $application->irinn_billing_address ?? null,
+                        'billing_pincode' => $application->irinn_billing_postcode ?? null,
+                    ];
+
+                    $newKycDetails = [
+                        'gstin' => $gstVerification->gstin,
+                        'legal_name' => $gstVerification->legal_name ?? null,
+                        'trade_name' => $gstVerification->trade_name ?? null,
+                        'billing_address' => $gstVerification->primary_address ?? null,
+                        'billing_pincode' => $gstVerification->pincode ?? null,
+                    ];
+
+                    if ($oldGstin !== $newGstin) {
+                        // Compute similarity to decide between direct update vs admin approval.
+                        $similarityScore = null;
+                        $requiresApproval = false;
+
+                        if ($oldCompanyName && $newCompanyName) {
+                            $similarityScore = $this->calculateStringSimilarity(
+                                strtolower(trim($oldCompanyName)),
+                                strtolower(trim($newCompanyName))
+                            );
+
+                            if ($similarityScore < 70) {
+                                $requiresApproval = true;
+                            }
+                        } elseif ($newCompanyName && ! $oldCompanyName) {
+                            $requiresApproval = false;
+                        }
+
+                        if ($requiresApproval) {
+                            ApplicationGstUpdateRequest::create([
+                                'application_id' => $application->id,
+                                'user_id' => $userId,
+                                'old_gstin' => $oldGstin,
+                                'new_gstin' => $newGstin,
+                                'old_company_name' => $oldCompanyName,
+                                'new_company_name' => $newCompanyName,
+                                'similarity_score' => $similarityScore,
+                                'old_kyc_details' => $oldKycDetails,
+                                'new_kyc_details' => $newKycDetails,
+                                'gst_verification_id' => $gstVerification->id,
+                                'status' => 'pending',
+                            ]);
+
+                            \App\Models\ApplicationStatusHistory::log(
+                                $application->id,
+                                (string) ($application->status ?? ''),
+                                (string) ($application->status ?? ''),
+                                'user',
+                                $userId,
+                                "GST update requested: {$oldGstin} -> {$newGstin}"
+                            );
+
+                            return redirect()->route('user.applications.show', $application->id)
+                                ->with('info', 'GST update request submitted for admin approval. Company name similarity is '.number_format((float) ($similarityScore ?? 0), 2).'% (requires 70% or more for automatic approval).');
+                        }
+
+                        // Direct update: write verified GST details into IRINN columns.
+                        $application->gst_verification_id = $gstVerification->id;
+                        $application->irinn_has_gst_number = true;
+                        $application->irinn_billing_gstin = $gstVerification->gstin;
+                        $application->irinn_billing_legal_name = $gstVerification->legal_name ?? null;
+                        $application->irinn_billing_pan = $gstVerification->pan ?? null;
+                        $application->irinn_billing_address = $gstVerification->primary_address ?? null;
+                        $application->irinn_billing_postcode = $gstVerification->pincode ?? null;
+                        $application->save();
+
+                        ApplicationGstChangeHistory::log(
+                            $application->id,
+                            $userId,
+                            $oldGstin,
+                            $newGstin,
+                            $oldKycDetails,
+                            $newKycDetails,
+                            'user',
+                            $userId,
+                            'GST updated by user'
+                        );
+
+                        // Log GSTIN change for this application (file log + notifications)
+                        $this->logApplicationGstinChange($user, $application, $oldGstin !== '' ? $oldGstin : null, $newGstin);
+                        $this->notifyAdminsOfApplicationGstinChange($user, $application, $oldGstin !== '' ? $oldGstin : null, $newGstin);
+
+                        \App\Models\ApplicationStatusHistory::log(
+                            $application->id,
+                            (string) ($application->status ?? ''),
+                            (string) ($application->status ?? ''),
+                            'user',
+                            $userId,
+                            "GST updated: {$oldGstin} -> {$newGstin}"
+                        );
+                    } else {
+                        // GSTIN same: still refresh billing details from verified GST.
+                        $application->gst_verification_id = $gstVerification->id;
+                        $application->irinn_has_gst_number = true;
+                        $application->irinn_billing_legal_name = $gstVerification->legal_name ?? null;
+                        $application->irinn_billing_pan = $gstVerification->pan ?? null;
+                        $application->irinn_billing_address = $gstVerification->primary_address ?? null;
+                        $application->irinn_billing_postcode = $gstVerification->pincode ?? null;
+                        $application->save();
+
+                        \App\Models\ApplicationStatusHistory::log(
+                            $application->id,
+                            (string) ($application->status ?? ''),
+                            (string) ($application->status ?? ''),
+                            'user',
+                            $userId,
+                            "GST re-verified (same GSTIN): {$newGstin}"
+                        );
+                    }
+
+                    return redirect()->route('user.applications.show', $application->id)
+                        ->with('success', 'GST details updated successfully for this application.');
+                }
+
                 // Get old GSTIN from application's kyc_details, application_data, or GST verification
                 $oldGstin = null;
                 $kycDetails = is_array($application->kyc_details) ? $application->kyc_details : [];

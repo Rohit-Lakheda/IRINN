@@ -19,16 +19,7 @@
 
         return $v ? 'Yes' : 'No';
     };
-    $irinnMainFiles = [
-        'Registration / incorporation' => 'irinn_registration_document_path',
-        'CA declaration' => 'irinn_ca_declaration_path',
-        'Signature proof' => 'irinn_signature_proof_path',
-        'Board resolution' => 'irinn_board_resolution_path',
-        'Network diagram' => 'irinn_kyc_network_diagram_path',
-        'Equipment invoice' => 'irinn_kyc_equipment_invoice_path',
-        'Bandwidth proof' => 'irinn_kyc_bandwidth_proof_path',
-        'IRINN agreement (KYC)' => 'irinn_kyc_irinn_agreement_path',
-    ];
+    // Note: Step 7 (KYC documents) removed from this portal.
 @endphp
 
 <div class="irinn-normalized-details">
@@ -132,38 +123,5 @@
     </div>
     </div>
 
-    <div id="irinn-detail-step-7" class="irinn-step-panel d-none mb-4" data-irinn-step="7">
-    <h6 class="text-primary border-bottom pb-2 mb-3">Step 7 — KYC documents</h6>
-    <h6 class="text-secondary small text-uppercase fw-semibold mb-2">Uploaded files</h6>
-    <div class="row g-2 mb-3">
-        @foreach($irinnMainFiles as $label => $col)
-            <div class="col-md-6 d-flex justify-content-between align-items-center border rounded px-3 py-2">
-                <span class="small">{{ $label }}</span>
-                @if($url = $doc($col))
-                    <a href="{{ $url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary">View</a>
-                @else
-                    <span class="text-muted small">—</span>
-                @endif
-            </div>
-        @endforeach
-    </div>
-    @for($i = 1; $i <= 5; $i++)
-        @php
-            $labelCol = "irinn_other_doc_{$i}_label";
-            $pathCol = "irinn_other_doc_{$i}_path";
-            $lbl = $application->{$labelCol};
-            $pth = $application->{$pathCol};
-        @endphp
-        @if($lbl || $pth)
-            <div class="d-flex justify-content-between align-items-center border rounded px-3 py-2 mb-2">
-                <span class="small"><strong>Other {{ $i }}:</strong> {{ $lbl ?: 'Document' }}</span>
-                @if($pth && ($url = $doc($pathCol)))
-                    <a href="{{ $url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary">View</a>
-                @else
-                    <span class="text-muted small">—</span>
-                @endif
-            </div>
-        @endif
-    @endfor
-    </div>
+    {{-- Step 7 (KYC documents) intentionally removed --}}
 </div>

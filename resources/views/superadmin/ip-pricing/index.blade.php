@@ -42,10 +42,9 @@
                                         <th style="color: #2c3e50; font-weight: 600;">Size</th>
                                         <th style="color: #2c3e50; font-weight: 600;">Addresses</th>
                                         <th style="color: #2c3e50; font-weight: 600;">Amount (₹)</th>
-                                        <th style="color: #2c3e50; font-weight: 600;">GST %</th>
-                                        <th style="color: #2c3e50; font-weight: 600;">IGST (₹)</th>
-                                        <th style="color: #2c3e50; font-weight: 600;">CGST (₹)</th>
-                                        <th style="color: #2c3e50; font-weight: 600;">SGST (₹)</th>
+                                        <th style="color: #2c3e50; font-weight: 600;">IGST (%)</th>
+                                        <th style="color: #2c3e50; font-weight: 600;">CGST (%)</th>
+                                        <th style="color: #2c3e50; font-weight: 600;">SGST (%)</th>
                                         <th style="color: #2c3e50; font-weight: 600;">Price (₹)</th>
                                         <th style="color: #2c3e50; font-weight: 600;">Effective From</th>
                                         <th style="color: #2c3e50; font-weight: 600;">Effective Until</th>
@@ -57,12 +56,11 @@
                                 @foreach($ipv4Pricings as $pricing)
                                 <tr>
                                         <td><strong style="color: #2c3e50;">{{ $pricing->size }}</strong></td>
-                                    <td>{{ number_format($pricing->addresses) }}</td>
-                                        <td>₹{{ number_format($pricing->amount ?? 0, 2) }}</td>
-                                        <td>{{ $pricing->gst_percentage ?? '-' }}%</td>
-                                        <td>₹{{ number_format($pricing->igst ?? 0, 2) }}</td>
-                                        <td>₹{{ number_format($pricing->cgst ?? 0, 2) }}</td>
-                                        <td>₹{{ number_format($pricing->sgst ?? 0, 2) }}</td>
+                                    <td>{{ \App\Models\IpPricing::formatAddressCount($pricing->addresses) }}</td>
+                                        <td>₹{{ number_format($pricing->getComputedAmount(), 2) }}</td>
+                                        <td>{{ $pricing->igst !== null ? number_format((float) $pricing->igst, 2) : '-' }}</td>
+                                        <td>{{ $pricing->cgst !== null ? number_format((float) $pricing->cgst, 2) : '-' }}</td>
+                                        <td>{{ $pricing->sgst !== null ? number_format((float) $pricing->sgst, 2) : '-' }}</td>
                                         <td><strong style="color: #2c3e50;">₹{{ number_format($pricing->price ?? $pricing->getFinalPrice(), 2) }}</strong></td>
                                         <td>
                                             <small>{{ $pricing->effective_from ? $pricing->effective_from->format('M d, Y') : '-' }}</small>
@@ -140,37 +138,35 @@
                                                         <div class="row g-3">
                                                             <div class="col-md-6">
                                                         <label class="form-label">Size</label>
-                                                        <input type="text" class="form-control" value="{{ $pricing->size }}" disabled>
+                                                        <input type="text" class="form-control pricing-size-input" value="{{ $pricing->size }}" data-ip-type="{{ $pricing->ip_type }}" data-target-addresses="editAddresses{{ $pricing->id }}" data-target-preview="editAddressesPreview{{ $pricing->id }}" disabled>
                                                         <small class="text-muted">Size cannot be changed</small>
                                                     </div>
                                                             <div class="col-md-6">
                                                         <label class="form-label">Addresses <span class="text-danger">*</span></label>
-                                                        <input type="number" name="addresses" class="form-control" value="{{ $pricing->addresses }}" required min="1">
+                                                        <input type="text" name="addresses" id="editAddresses{{ $pricing->id }}" class="form-control js-addresses-input" value="{{ $pricing->addresses }}" required pattern="[0-9]{1,39}" inputmode="numeric">
+                                                        <small class="text-muted" id="editAddressesPreview{{ $pricing->id }}">Current total addresses: {{ \App\Models\IpPricing::formatAddressCount($pricing->addresses) }}</small>
                                                     </div>
                                                             <div class="col-md-6">
-                                                                <label class="form-label">Amount (₹) <span class="text-danger">*</span></label>
-                                                                <input type="number" name="amount" class="form-control" value="{{ $pricing->amount }}" required step="0.01" min="0" id="amount{{ $pricing->id }}">
-                                                            </div>
-                                                            <div class="col-md-6">
-                                                                <label class="form-label">GST Percentage (%)</label>
-                                                                <input type="number" name="gst_percentage" class="form-control" value="{{ $pricing->gst_percentage }}" step="0.01" min="0" max="100" id="gstPercent{{ $pricing->id }}">
+                                                                <label class="form-label">Calculated Amount (₹)</label>
+                                                                <input type="text" class="form-control js-computed-amount" value="{{ number_format($pricing->getComputedAmount(), 2) }}" readonly>
+                                                                <small class="text-muted">Auto-calculated from address count</small>
                                                             </div>
                                                             <div class="col-md-4">
-                                                                <label class="form-label">IGST (₹)</label>
-                                                                <input type="number" name="igst" class="form-control" value="{{ $pricing->igst }}" step="0.01" min="0" id="igst{{ $pricing->id }}">
+                                                                <label class="form-label">IGST (%)</label>
+                                                                <input type="number" name="igst" class="form-control js-tax-input" value="{{ $pricing->igst }}" step="0.01" min="0" max="100">
                                                             </div>
                                                             <div class="col-md-4">
-                                                                <label class="form-label">CGST (₹)</label>
-                                                                <input type="number" name="cgst" class="form-control" value="{{ $pricing->cgst }}" step="0.01" min="0" id="cgst{{ $pricing->id }}">
+                                                                <label class="form-label">CGST (%)</label>
+                                                                <input type="number" name="cgst" class="form-control js-tax-input" value="{{ $pricing->cgst }}" step="0.01" min="0" max="100">
                                                             </div>
                                                             <div class="col-md-4">
-                                                                <label class="form-label">SGST (₹)</label>
-                                                                <input type="number" name="sgst" class="form-control" value="{{ $pricing->sgst }}" step="0.01" min="0" id="sgst{{ $pricing->id }}">
+                                                                <label class="form-label">SGST (%)</label>
+                                                                <input type="number" name="sgst" class="form-control js-tax-input" value="{{ $pricing->sgst }}" step="0.01" min="0" max="100">
                                                     </div>
                                                             <div class="col-md-6">
-                                                                <label class="form-label">Final Price (₹) <span class="text-danger">*</span></label>
-                                                                <input type="number" name="price" class="form-control" value="{{ $pricing->price ?? $pricing->getFinalPrice() }}" required step="0.01" min="0" id="price{{ $pricing->id }}">
-                                                                <small class="text-muted">Amount + IGST (or CGST + SGST)</small>
+                                                                <label class="form-label">Final Price (₹)</label>
+                                                                <input type="text" class="form-control js-computed-price" value="{{ number_format($pricing->getFinalPrice(), 2) }}" readonly>
+                                                                <small class="text-muted">Auto-calculated from amount + tax percentages</small>
                                                     </div>
                                                             <div class="col-md-6">
                                                                 <label class="form-label">Effective From</label>
@@ -234,10 +230,9 @@
                                         <th style="color: #2c3e50; font-weight: 600;">Size</th>
                                         <th style="color: #2c3e50; font-weight: 600;">Addresses</th>
                                         <th style="color: #2c3e50; font-weight: 600;">Amount (₹)</th>
-                                        <th style="color: #2c3e50; font-weight: 600;">GST %</th>
-                                        <th style="color: #2c3e50; font-weight: 600;">IGST (₹)</th>
-                                        <th style="color: #2c3e50; font-weight: 600;">CGST (₹)</th>
-                                        <th style="color: #2c3e50; font-weight: 600;">SGST (₹)</th>
+                                        <th style="color: #2c3e50; font-weight: 600;">IGST (%)</th>
+                                        <th style="color: #2c3e50; font-weight: 600;">CGST (%)</th>
+                                        <th style="color: #2c3e50; font-weight: 600;">SGST (%)</th>
                                         <th style="color: #2c3e50; font-weight: 600;">Price (₹)</th>
                                         <th style="color: #2c3e50; font-weight: 600;">Effective From</th>
                                         <th style="color: #2c3e50; font-weight: 600;">Effective Until</th>
@@ -249,12 +244,11 @@
                                 @foreach($ipv6Pricings as $pricing)
                                 <tr>
                                         <td><strong style="color: #2c3e50;">{{ $pricing->size }}</strong></td>
-                                    <td>{{ number_format($pricing->addresses) }}</td>
-                                        <td>₹{{ number_format($pricing->amount ?? 0, 2) }}</td>
-                                        <td>{{ $pricing->gst_percentage ?? '-' }}%</td>
-                                        <td>₹{{ number_format($pricing->igst ?? 0, 2) }}</td>
-                                        <td>₹{{ number_format($pricing->cgst ?? 0, 2) }}</td>
-                                        <td>₹{{ number_format($pricing->sgst ?? 0, 2) }}</td>
+                                    <td>{{ \App\Models\IpPricing::formatAddressCount($pricing->addresses) }}</td>
+                                        <td>₹{{ number_format($pricing->getComputedAmount(), 2) }}</td>
+                                        <td>{{ $pricing->igst !== null ? number_format((float) $pricing->igst, 2) : '-' }}</td>
+                                        <td>{{ $pricing->cgst !== null ? number_format((float) $pricing->cgst, 2) : '-' }}</td>
+                                        <td>{{ $pricing->sgst !== null ? number_format((float) $pricing->sgst, 2) : '-' }}</td>
                                         <td><strong style="color: #2c3e50;">₹{{ number_format($pricing->price ?? $pricing->getFinalPrice(), 2) }}</strong></td>
                                         <td>
                                             <small>{{ $pricing->effective_from ? $pricing->effective_from->format('M d, Y') : '-' }}</small>
@@ -332,37 +326,35 @@
                                                         <div class="row g-3">
                                                             <div class="col-md-6">
                                                         <label class="form-label">Size</label>
-                                                        <input type="text" class="form-control" value="{{ $pricing->size }}" disabled>
+                                                        <input type="text" class="form-control pricing-size-input" value="{{ $pricing->size }}" data-ip-type="{{ $pricing->ip_type }}" data-target-addresses="editAddresses{{ $pricing->id }}" data-target-preview="editAddressesPreview{{ $pricing->id }}" disabled>
                                                         <small class="text-muted">Size cannot be changed</small>
                                                     </div>
                                                             <div class="col-md-6">
                                                         <label class="form-label">Addresses <span class="text-danger">*</span></label>
-                                                        <input type="number" name="addresses" class="form-control" value="{{ $pricing->addresses }}" required min="1">
+                                                        <input type="text" name="addresses" id="editAddresses{{ $pricing->id }}" class="form-control js-addresses-input" value="{{ $pricing->addresses }}" required pattern="[0-9]{1,39}" inputmode="numeric">
+                                                        <small class="text-muted" id="editAddressesPreview{{ $pricing->id }}">Current total addresses: {{ \App\Models\IpPricing::formatAddressCount($pricing->addresses) }}</small>
                                                     </div>
                                                             <div class="col-md-6">
-                                                                <label class="form-label">Amount (₹) <span class="text-danger">*</span></label>
-                                                                <input type="number" name="amount" class="form-control" value="{{ $pricing->amount }}" required step="0.01" min="0" id="amount{{ $pricing->id }}">
-                                                            </div>
-                                                            <div class="col-md-6">
-                                                                <label class="form-label">GST Percentage (%)</label>
-                                                                <input type="number" name="gst_percentage" class="form-control" value="{{ $pricing->gst_percentage }}" step="0.01" min="0" max="100" id="gstPercent{{ $pricing->id }}">
+                                                                <label class="form-label">Calculated Amount (₹)</label>
+                                                                <input type="text" class="form-control js-computed-amount" value="{{ number_format($pricing->getComputedAmount(), 2) }}" readonly>
+                                                                <small class="text-muted">Auto-calculated from address count</small>
                                                             </div>
                                                             <div class="col-md-4">
-                                                                <label class="form-label">IGST (₹)</label>
-                                                                <input type="number" name="igst" class="form-control" value="{{ $pricing->igst }}" step="0.01" min="0" id="igst{{ $pricing->id }}">
+                                                                <label class="form-label">IGST (%)</label>
+                                                                <input type="number" name="igst" class="form-control js-tax-input" value="{{ $pricing->igst }}" step="0.01" min="0" max="100">
                                                             </div>
                                                             <div class="col-md-4">
-                                                                <label class="form-label">CGST (₹)</label>
-                                                                <input type="number" name="cgst" class="form-control" value="{{ $pricing->cgst }}" step="0.01" min="0" id="cgst{{ $pricing->id }}">
+                                                                <label class="form-label">CGST (%)</label>
+                                                                <input type="number" name="cgst" class="form-control js-tax-input" value="{{ $pricing->cgst }}" step="0.01" min="0" max="100">
                                                             </div>
                                                             <div class="col-md-4">
-                                                                <label class="form-label">SGST (₹)</label>
-                                                                <input type="number" name="sgst" class="form-control" value="{{ $pricing->sgst }}" step="0.01" min="0" id="sgst{{ $pricing->id }}">
+                                                                <label class="form-label">SGST (%)</label>
+                                                                <input type="number" name="sgst" class="form-control js-tax-input" value="{{ $pricing->sgst }}" step="0.01" min="0" max="100">
                                                     </div>
                                                             <div class="col-md-6">
-                                                                <label class="form-label">Final Price (₹) <span class="text-danger">*</span></label>
-                                                                <input type="number" name="price" class="form-control" value="{{ $pricing->price ?? $pricing->getFinalPrice() }}" required step="0.01" min="0" id="price{{ $pricing->id }}">
-                                                                <small class="text-muted">Amount + IGST (or CGST + SGST)</small>
+                                                                <label class="form-label">Final Price (₹)</label>
+                                                                <input type="text" class="form-control js-computed-price" value="{{ number_format($pricing->getFinalPrice(), 2) }}" readonly>
+                                                                <small class="text-muted">Auto-calculated from amount + tax percentages</small>
                                                     </div>
                                                             <div class="col-md-6">
                                                                 <label class="form-label">Effective From</label>
@@ -421,37 +413,35 @@
                         <div class="row g-3">
                             <div class="col-md-6">
                                 <label class="form-label">Size <span class="text-danger">*</span></label>
-                                <input type="text" name="size" class="form-control" placeholder="e.g., /24, /23" required>
+                                <input type="text" name="size" class="form-control pricing-size-input" data-ip-type="ipv4" data-target-addresses="addIpv4Addresses" data-target-preview="addIpv4AddressesPreview" placeholder="e.g., /24, /23" required>
                                 <small class="text-muted">CIDR notation</small>
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label">Addresses <span class="text-danger">*</span></label>
-                                <input type="number" name="addresses" class="form-control" required min="1">
+                                <input type="text" name="addresses" id="addIpv4Addresses" class="form-control" required pattern="[0-9]{1,39}" inputmode="numeric">
+                                <small class="text-muted" id="addIpv4AddressesPreview">Addresses will be auto-calculated from CIDR size.</small>
                             </div>
                             <div class="col-md-6">
-                                <label class="form-label">Amount (₹) <span class="text-danger">*</span></label>
-                                <input type="number" name="amount" class="form-control" required step="0.01" min="0" id="addAmountIpv4">
+                                <label class="form-label">Calculated Amount (₹)</label>
+                                <input type="text" class="form-control" id="addAmountIpv4" readonly>
+                                <small class="text-muted">Auto-calculated from address count</small>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">IGST (%)</label>
+                                <input type="number" name="igst" class="form-control" step="0.01" min="0" max="100" id="addIgstIpv4">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">CGST (%)</label>
+                                <input type="number" name="cgst" class="form-control" step="0.01" min="0" max="100" id="addCgstIpv4">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">SGST (%)</label>
+                                <input type="number" name="sgst" class="form-control" step="0.01" min="0" max="100" id="addSgstIpv4">
                             </div>
                             <div class="col-md-6">
-                                <label class="form-label">GST Percentage (%)</label>
-                                <input type="number" name="gst_percentage" class="form-control" step="0.01" min="0" max="100" id="addGstPercentIpv4">
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label">IGST (₹)</label>
-                                <input type="number" name="igst" class="form-control" step="0.01" min="0" id="addIgstIpv4">
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label">CGST (₹)</label>
-                                <input type="number" name="cgst" class="form-control" step="0.01" min="0" id="addCgstIpv4">
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label">SGST (₹)</label>
-                                <input type="number" name="sgst" class="form-control" step="0.01" min="0" id="addSgstIpv4">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">Final Price (₹) <span class="text-danger">*</span></label>
-                                <input type="number" name="price" class="form-control" required step="0.01" min="0" id="addPriceIpv4">
-                                <small class="text-muted">Amount + IGST (or CGST + SGST)</small>
+                                <label class="form-label">Final Price (₹)</label>
+                                <input type="text" class="form-control" id="addPriceIpv4" readonly>
+                                <small class="text-muted">Auto-calculated from amount + tax percentages</small>
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label">Effective From</label>
@@ -497,37 +487,35 @@
                         <div class="row g-3">
                             <div class="col-md-6">
                                 <label class="form-label">Size <span class="text-danger">*</span></label>
-                                <input type="text" name="size" class="form-control" placeholder="e.g., /48, /32" required>
+                                <input type="text" name="size" class="form-control pricing-size-input" data-ip-type="ipv6" data-target-addresses="addIpv6Addresses" data-target-preview="addIpv6AddressesPreview" placeholder="e.g., /48, /32" required>
                                 <small class="text-muted">CIDR notation</small>
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label">Addresses <span class="text-danger">*</span></label>
-                                <input type="number" name="addresses" class="form-control" required min="1">
+                                <input type="text" name="addresses" id="addIpv6Addresses" class="form-control" required pattern="[0-9]{1,39}" inputmode="numeric">
+                                <small class="text-muted" id="addIpv6AddressesPreview">Addresses will be auto-calculated from CIDR size.</small>
                             </div>
                             <div class="col-md-6">
-                                <label class="form-label">Amount (₹) <span class="text-danger">*</span></label>
-                                <input type="number" name="amount" class="form-control" required step="0.01" min="0" id="addAmountIpv6">
+                                <label class="form-label">Calculated Amount (₹)</label>
+                                <input type="text" class="form-control" id="addAmountIpv6" readonly>
+                                <small class="text-muted">Auto-calculated from address count</small>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">IGST (%)</label>
+                                <input type="number" name="igst" class="form-control" step="0.01" min="0" max="100" id="addIgstIpv6">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">CGST (%)</label>
+                                <input type="number" name="cgst" class="form-control" step="0.01" min="0" max="100" id="addCgstIpv6">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">SGST (%)</label>
+                                <input type="number" name="sgst" class="form-control" step="0.01" min="0" max="100" id="addSgstIpv6">
                             </div>
                             <div class="col-md-6">
-                                <label class="form-label">GST Percentage (%)</label>
-                                <input type="number" name="gst_percentage" class="form-control" step="0.01" min="0" max="100" id="addGstPercentIpv6">
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label">IGST (₹)</label>
-                                <input type="number" name="igst" class="form-control" step="0.01" min="0" id="addIgstIpv6">
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label">CGST (₹)</label>
-                                <input type="number" name="cgst" class="form-control" step="0.01" min="0" id="addCgstIpv6">
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label">SGST (₹)</label>
-                                <input type="number" name="sgst" class="form-control" step="0.01" min="0" id="addSgstIpv6">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">Final Price (₹) <span class="text-danger">*</span></label>
-                                <input type="number" name="price" class="form-control" required step="0.01" min="0" id="addPriceIpv6">
-                                <small class="text-muted">Amount + IGST (or CGST + SGST)</small>
+                                <label class="form-label">Final Price (₹)</label>
+                                <input type="text" class="form-control" id="addPriceIpv6" readonly>
+                                <small class="text-muted">Auto-calculated from amount + tax percentages</small>
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label">Effective From</label>
@@ -562,103 +550,157 @@
 @push('scripts')
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // Function to calculate price based on amount and GST
-    function calculatePrice(amount, gstPercent, igst, cgst, sgst, priceField) {
-        let totalGst = 0;
-        
-        // If IGST is provided, use it
-        if (igst && parseFloat(igst) > 0) {
-            totalGst = parseFloat(igst);
-        } 
-        // If CGST and SGST are provided, use them
-        else if (cgst && sgst && (parseFloat(cgst) > 0 || parseFloat(sgst) > 0)) {
-            totalGst = parseFloat(cgst) + parseFloat(sgst);
-        }
-        // If GST percentage is provided, calculate from amount
-        else if (gstPercent && parseFloat(gstPercent) > 0) {
-            totalGst = (parseFloat(amount) * parseFloat(gstPercent)) / 100;
-        }
-        
-        const finalPrice = parseFloat(amount) + totalGst;
-        if (priceField && !isNaN(finalPrice)) {
-            priceField.value = finalPrice.toFixed(2);
-        }
+    function formatBigIntWithCommas(value) {
+        return value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
     }
 
-    // Setup for add IPv4 form
-    const addAmountIpv4 = document.getElementById('addAmountIpv4');
-    const addGstPercentIpv4 = document.getElementById('addGstPercentIpv4');
-    const addIgstIpv4 = document.getElementById('addIgstIpv4');
-    const addCgstIpv4 = document.getElementById('addCgstIpv4');
-    const addSgstIpv4 = document.getElementById('addSgstIpv4');
-    const addPriceIpv4 = document.getElementById('addPriceIpv4');
+    function parseCidrPrefix(rawSize) {
+        if (!rawSize) {
+            return null;
+        }
 
-    if (addAmountIpv4) {
-        [addAmountIpv4, addGstPercentIpv4, addIgstIpv4, addCgstIpv4, addSgstIpv4].forEach(field => {
-            if (field) {
-                field.addEventListener('input', function() {
-                    calculatePrice(addAmountIpv4.value, addGstPercentIpv4.value, addIgstIpv4.value, addCgstIpv4.value, addSgstIpv4.value, addPriceIpv4);
-                });
+        const match = String(rawSize).trim().match(/^\/?(\d{1,3})$/);
+
+        return match ? parseInt(match[1], 10) : null;
+    }
+
+    function getAddressCount(ipType, rawSize) {
+        const prefix = parseCidrPrefix(rawSize);
+        if (prefix === null) {
+            return null;
+        }
+
+        if (ipType === 'ipv4') {
+            if (prefix < 0 || prefix > 32) {
+                return null;
             }
-        });
-    }
 
-    // Setup for add IPv6 form
-    const addAmountIpv6 = document.getElementById('addAmountIpv6');
-    const addGstPercentIpv6 = document.getElementById('addGstPercentIpv6');
-    const addIgstIpv6 = document.getElementById('addIgstIpv6');
-    const addCgstIpv6 = document.getElementById('addCgstIpv6');
-    const addSgstIpv6 = document.getElementById('addSgstIpv6');
-    const addPriceIpv6 = document.getElementById('addPriceIpv6');
+            return {
+                raw: (BigInt(1) << BigInt(32 - prefix)).toString(),
+                numeric: Number(2 ** (32 - prefix)),
+                label: formatBigIntWithCommas(BigInt(1) << BigInt(32 - prefix)),
+            };
+        }
 
-    if (addAmountIpv6) {
-        [addAmountIpv6, addGstPercentIpv6, addIgstIpv6, addCgstIpv6, addSgstIpv6].forEach(field => {
-            if (field) {
-                field.addEventListener('input', function() {
-                    calculatePrice(addAmountIpv6.value, addGstPercentIpv6.value, addIgstIpv6.value, addCgstIpv6.value, addSgstIpv6.value, addPriceIpv6);
-                });
+        if (ipType === 'ipv6') {
+            if (prefix < 0 || prefix > 128) {
+                return null;
             }
-        });
+
+            const addresses = BigInt(1) << BigInt(128 - prefix);
+
+            return {
+                raw: addresses.toString(),
+                numeric: null, // too large for safe number in most cases
+                label: formatBigIntWithCommas(addresses),
+            };
+        }
+
+        return null;
     }
 
-    // Setup for edit forms
-    @foreach($ipv4Pricings as $pricing)
-        const amount{{ $pricing->id }} = document.getElementById('amount{{ $pricing->id }}');
-        const gstPercent{{ $pricing->id }} = document.getElementById('gstPercent{{ $pricing->id }}');
-        const igst{{ $pricing->id }} = document.getElementById('igst{{ $pricing->id }}');
-        const cgst{{ $pricing->id }} = document.getElementById('cgst{{ $pricing->id }}');
-        const sgst{{ $pricing->id }} = document.getElementById('sgst{{ $pricing->id }}');
-        const price{{ $pricing->id }} = document.getElementById('price{{ $pricing->id }}');
+    function wireAddressesPreview(sizeInput) {
+        const ipType = sizeInput.dataset.ipType;
+        const targetAddressesId = sizeInput.dataset.targetAddresses;
+        const targetPreviewId = sizeInput.dataset.targetPreview;
 
-        if (amount{{ $pricing->id }}) {
-            [amount{{ $pricing->id }}, gstPercent{{ $pricing->id }}, igst{{ $pricing->id }}, cgst{{ $pricing->id }}, sgst{{ $pricing->id }}].forEach(field => {
-                if (field) {
-                    field.addEventListener('input', function() {
-                        calculatePrice(amount{{ $pricing->id }}.value, gstPercent{{ $pricing->id }}.value, igst{{ $pricing->id }}.value, cgst{{ $pricing->id }}.value, sgst{{ $pricing->id }}.value, price{{ $pricing->id }});
-                    });
-                }
-            });
+        if (!ipType || !targetAddressesId || !targetPreviewId) {
+            return;
         }
-    @endforeach
 
-    @foreach($ipv6Pricings as $pricing)
-        const amount{{ $pricing->id }} = document.getElementById('amount{{ $pricing->id }}');
-        const gstPercent{{ $pricing->id }} = document.getElementById('gstPercent{{ $pricing->id }}');
-        const igst{{ $pricing->id }} = document.getElementById('igst{{ $pricing->id }}');
-        const cgst{{ $pricing->id }} = document.getElementById('cgst{{ $pricing->id }}');
-        const sgst{{ $pricing->id }} = document.getElementById('sgst{{ $pricing->id }}');
-        const price{{ $pricing->id }} = document.getElementById('price{{ $pricing->id }}');
-
-        if (amount{{ $pricing->id }}) {
-            [amount{{ $pricing->id }}, gstPercent{{ $pricing->id }}, igst{{ $pricing->id }}, cgst{{ $pricing->id }}, sgst{{ $pricing->id }}].forEach(field => {
-                if (field) {
-                    field.addEventListener('input', function() {
-                        calculatePrice(amount{{ $pricing->id }}.value, gstPercent{{ $pricing->id }}.value, igst{{ $pricing->id }}.value, cgst{{ $pricing->id }}.value, sgst{{ $pricing->id }}.value, price{{ $pricing->id }});
-                    });
-                }
-            });
+        const addressesInput = document.getElementById(targetAddressesId);
+        const previewEl = document.getElementById(targetPreviewId);
+        if (!addressesInput || !previewEl) {
+            return;
         }
-    @endforeach
+
+        const refresh = () => {
+            const result = getAddressCount(ipType, sizeInput.value);
+            if (!result) {
+                previewEl.textContent = 'Enter a valid CIDR size to view address count.';
+                return;
+            }
+
+            previewEl.textContent = `Calculated addresses: ${result.label}`;
+            addressesInput.value = result.raw;
+        };
+
+        sizeInput.addEventListener('input', refresh);
+        refresh();
+    }
+
+    document.querySelectorAll('.pricing-size-input').forEach(wireAddressesPreview);
+
+    function parsePositiveNumber(v) {
+        const n = parseFloat(v);
+
+        return Number.isFinite(n) && n > 0 ? n : 0;
+    }
+
+    function log2FromIntegerString(raw) {
+        const digits = String(raw || '').replace(/\D+/g, '');
+        if (!digits || /^0+$/.test(digits)) {
+            return null;
+        }
+
+        // Approximate log2 for very large integers without losing validity in JS number range.
+        const lead = parseFloat(digits.slice(0, Math.min(15, digits.length)));
+        const leadDigits = digits.length - Math.min(15, digits.length);
+        const leadScaled = lead * Math.pow(10, leadDigits);
+
+        return Math.log2(leadScaled);
+    }
+
+    function computeAmountByAddresses(ipType, addressesRaw) {
+        const log2Addresses = log2FromIntegerString(addressesRaw);
+        if (log2Addresses === null) {
+            return 0;
+        }
+
+        if (ipType === 'ipv4') {
+            return 27500 * Math.pow(1.35, log2Addresses - 8);
+        }
+
+        return 24199 * Math.pow(1.35, log2Addresses - 80);
+    }
+
+    function refreshComputedAmountsInForm(formEl) {
+        if (!formEl) {
+            return;
+        }
+
+        const sizeInput = formEl.querySelector('.pricing-size-input');
+        const addressesInput = formEl.querySelector('input[name="addresses"]');
+        const amountEl = formEl.querySelector('#addAmountIpv4, #addAmountIpv6, .js-computed-amount');
+        const priceEl = formEl.querySelector('#addPriceIpv4, #addPriceIpv6, .js-computed-price');
+        const igstEl = formEl.querySelector('input[name="igst"]');
+        const cgstEl = formEl.querySelector('input[name="cgst"]');
+        const sgstEl = formEl.querySelector('input[name="sgst"]');
+
+        if (!sizeInput || !addressesInput || !amountEl || !priceEl) {
+            return;
+        }
+
+        const ipType = sizeInput.dataset.ipType || 'ipv4';
+        const amount = computeAmountByAddresses(ipType, addressesInput.value);
+        const igst = parsePositiveNumber(igstEl ? igstEl.value : 0);
+        const cgst = parsePositiveNumber(cgstEl ? cgstEl.value : 0);
+        const sgst = parsePositiveNumber(sgstEl ? sgstEl.value : 0);
+        const taxPercent = igst > 0 ? igst : (cgst + sgst);
+        const finalPrice = amount + ((amount * taxPercent) / 100);
+
+        amountEl.value = Number.isFinite(amount) ? amount.toFixed(2) : '';
+        priceEl.value = Number.isFinite(finalPrice) ? finalPrice.toFixed(2) : '';
+    }
+
+    document.querySelectorAll('#addIpv4Form, #addIpv6Form, form[id^="editForm"]').forEach((formEl) => {
+        const watchers = formEl.querySelectorAll('.pricing-size-input, input[name="addresses"], input[name="igst"], input[name="cgst"], input[name="sgst"]');
+        watchers.forEach((el) => {
+            el.addEventListener('input', () => refreshComputedAmountsInForm(formEl));
+        });
+
+        refreshComputedAmountsInForm(formEl);
+    });
 });
 </script>
 @endpush

@@ -63,9 +63,9 @@
                             <p class="mb-2">
                                 <span class="badge bg-danger">
                                     @if($ticket->escalation_level === 'ix_head')
-                                        ⚠️ Escalated to IX Head
+                                        ⚠️ Escalated to Level 1 role
                                     @elseif($ticket->escalation_level === 'ceo')
-                                        🔴 Escalated to CEO
+                                        🔴 Escalated to Level 2 role
                                     @endif
                                 </span>
                             </p>

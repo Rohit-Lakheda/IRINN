@@ -221,6 +221,7 @@ Route::prefix('admin')->name('admin.')->middleware(['admin'])->group(function ()
 
     // IRINN workflow routes (helpdesk -> hostmaster -> billing -> billing_approved + resubmission)
     Route::post('/applications/{id}/irinn/change-stage', [AdminController::class, 'irinnChangeStage'])->name('applications.irinn.change-stage');
+    Route::post('/applications/{id}/irinn/allocate-resources', [AdminController::class, 'irinnHostmasterAllocateResources'])->name('applications.irinn.allocate-resources');
     Route::post('/applications/{id}/irinn/request-resubmission', [AdminController::class, 'irinnRequestResubmission'])->name('applications.irinn.request-resubmission');
     Route::post('/applications/{id}/irinn/billing-discount', [AdminController::class, 'irinnBillingUpdateDiscount'])->name('applications.irinn.billing-discount');
     Route::get('/applications/{id}/irinn/preview-annual-invoice', [AdminController::class, 'irinnBillingPreviewAnnualInvoice'])->name('applications.irinn.preview-annual-invoice');

@@ -22,7 +22,7 @@
                     <a href="javascript:;" class="list-group-item list-group-item-action toggle-nav-link" data-target="section-application-info">
                         <i class="bi bi-info-circle me-2"></i> Application summary
                     </a>
-                    @if($application->registration_details || $application->application_type === 'IRINN')
+                    @if(!empty($application->registration_details) && $application->application_type !== 'IRINN')
                     <a href="javascript:;" class="list-group-item list-group-item-action toggle-nav-link" data-target="section-registration">
                         <i class="bi bi-person-badge me-2"></i> Registration details
                     </a>
@@ -59,9 +59,7 @@
                         <a href="javascript:;" class="list-group-item list-group-item-action py-2 ps-4 irinn-step-nav" data-irinn-step="6">
                             <span class="me-1 text-muted">6.</span> Upstream &amp; signatory
                         </a>
-                        <a href="javascript:;" class="list-group-item list-group-item-action py-2 ps-4 irinn-step-nav" data-irinn-step="7">
-                            <span class="me-1 text-muted">7.</span> KYC documents
-                        </a>
+                        {{-- KYC documents step removed (no longer collected on this portal) --}}
                     @endif
                     @if($application->application_type !== 'IRINN' && $application->application_data)
                         <a href="javascript:;" class="list-group-item list-group-item-action toggle-nav-link" data-target="section-application-data">
@@ -115,6 +113,29 @@
                     </div>
                 </div>
             </div>
+            @endif
+
+            @if($application->application_type === 'IRINN' && isset($approvedProfileUpdateRequest) && $approvedProfileUpdateRequest)
+                <div class="alert alert-info border-0 mb-3" style="border-radius: 16px;">
+                    <div class="d-flex align-items-start">
+                        <i class="bi bi-person-check me-2 fs-4"></i>
+                        <div class="flex-grow-1">
+                            <h6 class="alert-heading mb-2">Email & mobile update approved</h6>
+                            <p class="mb-3">Admin approved your profile update request. Submit the update (OTP verification) to apply it on your account.</p>
+                            <a href="{{ route('user.profile-update.edit') }}" class="btn btn-primary">
+                                Update Email & Mobile
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            @endif
+
+            @if($application->application_type === 'IRINN' && !($pendingGstUpdateRequest ?? null) && ! $hideUserOnlyActions)
+                <div class="mb-3">
+                    <a href="{{ route('user.applications.gst.edit', $application->id) }}" class="btn btn-primary" style="border-radius: 12px;">
+                        <i class="bi bi-receipt me-2"></i> Update GST
+                    </a>
+                </div>
             @endif
 
             <!-- IRINN Resubmission requested: show admin message and Edit & Resubmit -->
@@ -337,8 +358,8 @@
                 </div>
             </div>
 
-            <!-- Registration Details - Always render for IRINN -->
-            @if($application->application_type === 'IRINN' || !empty($application->registration_details))
+            <!-- Registration Details (non-IRINN only) -->
+            @if(!empty($application->registration_details) && $application->application_type !== 'IRINN')
             <div id="section-registration" class="card border-c-blue shadow-sm mb-3" style="border-radius: 16px; display: none;">
                 <div class="card-header theme-bg-blue d-flex justify-content-between align-items-center" style="border-radius: 16px 16px 0 0;">
                     <h6 class="mb-0">Registration details</h6>

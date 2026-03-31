@@ -42,7 +42,7 @@
                 <div class="col-md-3">
                     <div class="mb-3">
                         <label class="text-muted small mb-1">Addresses</label>
-                        <p class="mb-0" style="color: #2c3e50; font-weight: 500; font-size: 1.1rem;">{{ number_format($pricing->addresses) }}</p>
+                        <p class="mb-0" style="color: #2c3e50; font-weight: 500; font-size: 1.1rem;">{{ \App\Models\IpPricing::formatAddressCount($pricing->addresses) }}</p>
                     </div>
                 </div>
                 <div class="col-md-3">

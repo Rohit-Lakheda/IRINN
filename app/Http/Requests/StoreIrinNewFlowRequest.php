@@ -117,9 +117,9 @@ class StoreIrinNewFlowRequest extends FormRequest
             'irinn_asn_required' => ['nullable'],
 
             'irinn_ipv4_resource_size' => ['nullable', 'string', 'max:32'],
-            'irinn_ipv4_resource_addresses' => ['nullable', 'integer', 'min:0'],
+            'irinn_ipv4_resource_addresses' => ['nullable', 'string', 'regex:/^\d{1,39}$/'],
             'irinn_ipv6_resource_size' => ['nullable', 'string', 'max:32'],
-            'irinn_ipv6_resource_addresses' => ['nullable', 'integer', 'min:0'],
+            'irinn_ipv6_resource_addresses' => ['nullable', 'string', 'regex:/^\d{1,39}$/'],
             'irinn_resource_fee_amount' => ['nullable', 'numeric', 'min:0'],
 
             'irinn_upstream_provider_name' => ['required', 'string', 'max:255'],

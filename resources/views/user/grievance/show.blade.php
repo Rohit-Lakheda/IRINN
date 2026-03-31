@@ -97,7 +97,13 @@
                     <div class="row g-3 app-details">
                         <div class="col-md-6">
                             <label class="small text-muted mb-1 d-block">Assigned To</label>
-                            <div>{{ $ticket->assignedAdmin ? $ticket->assignedAdmin->name : 'Not Assigned' }}</div>
+                            <div>
+                                @if($ticket->assigned_role)
+                                    <span class="badge theme-bg-green text-capitalize">{{ ucfirst(str_replace('_', ' ', $ticket->assigned_role)) }}</span>
+                                @else
+                                    <span class="text-muted">Not Assigned</span>
+                                @endif
+                            </div>
                         </div>
                         @if($ticket->assigned_role)
                         <div class="col-md-6">
@@ -142,15 +148,22 @@
         </div>
         <div class="card-body">
             <div class="conversation-thread">
-                @forelse($ticket->messages as $message)
+                @php
+                    $visibleMessages = $ticket->messages->reject(fn ($m) => (bool) $m->is_internal)->values();
+                @endphp
+
+                @forelse($visibleMessages as $message)
                 <div class="message-item mb-3 p-3 rounded {{ $message->sender_type === 'user' ? 'alternative-light' : 'alter-light bg-opacity-10' }}">
                     <div class="d-flex justify-content-between align-items-start mb-2">
                         <div>
-                            <strong>{{ $message->sender_name }}</strong>
-                            <span class="badge bg-secondary ms-2">{{ ucfirst($message->sender_type) }}</span>
-                            @if($message->is_internal)
-                            <span class="badge bg-warning ms-1">Internal Note</span>
+                            @if($message->sender_type === 'user')
+                                <strong>{{ $message->sender_name }}</strong>
+                            @else
+                                <strong>
+                                    {{ $ticket->assigned_role ? ucfirst(str_replace('_', ' ', $ticket->assigned_role)) : 'Assigned Admin' }}
+                                </strong>
                             @endif
+                            <span class="badge bg-secondary ms-2">{{ ucfirst($message->sender_type) }}</span>
                         </div>
                         <small class="text-muted">{{ $message->created_at->format('d M Y, h:i A') }}</small>
                     </div>

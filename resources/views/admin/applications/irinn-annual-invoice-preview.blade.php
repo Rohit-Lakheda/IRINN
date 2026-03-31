@@ -51,7 +51,8 @@
                     <tr><th class="w-25">Proposed invoice no.</th><td><code>{{ $preview['proposed_invoice_number'] }}</code></td></tr>
                     <tr><th>Invoice date</th><td>{{ $preview['invoice_date'] }}</td></tr>
                     <tr><th>Due date</th><td>{{ $preview['due_date'] }}</td></tr>
-                    <tr><th>Resources as on</th><td>{{ $preview['as_on_for_resources'] }}</td></tr>
+                    <tr><th>Resources as on (allocation date)</th><td>{{ $preview['as_on_for_resources'] }}</td></tr>
+                    <tr><th>Allocation date (hostmaster)</th><td>{{ $preview['allocation_date'] }}</td></tr>
                     <tr><th>IPv4 / IPv6 (counts)</th><td>{{ $preview['ipv4_addresses'] }} / {{ $preview['ipv6_addresses'] }}</td></tr>
                     <tr><th>E-invoice (IRN)</th><td>{{ $preview['would_request_einvoice'] ? 'Yes — GSTIN present and API configured' : 'No — without valid billing GSTIN or API' }}</td></tr>
                     </tbody>

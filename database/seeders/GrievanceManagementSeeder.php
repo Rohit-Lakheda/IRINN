@@ -101,22 +101,22 @@ class GrievanceManagementSeeder extends Seeder
                 );
             }
 
-            // Create assignments based on category
+            // Create assignments based on category (IRINN: helpdesk, hostmaster, billing)
             $assignments = match ($category->slug) {
                 'network_connectivity' => [
-                    ['assigned_role' => 'nodal_officer', 'priority' => 1],
+                    ['assigned_role' => 'hostmaster', 'priority' => 1],
                 ],
                 'billing' => [
-                    ['assigned_role' => 'ix_account', 'priority' => 1],
+                    ['assigned_role' => 'billing', 'priority' => 1],
                 ],
                 'request' => [
-                    // These will be set per subcategory
+                    // Per subcategory below
                 ],
                 'feedback_suggestion' => [
-                    ['assigned_role' => 'ix_head', 'priority' => 1],
+                    ['assigned_role' => 'helpdesk', 'priority' => 1],
                 ],
                 'other' => [
-                    ['assigned_role' => 'ix_head', 'priority' => 1],
+                    ['assigned_role' => 'helpdesk', 'priority' => 1],
                 ],
                 default => [],
             };
@@ -140,13 +140,15 @@ class GrievanceManagementSeeder extends Seeder
                 $requestSubcategories = $category->subcategories;
                 foreach ($requestSubcategories as $subcategory) {
                     $subcategoryAssignments = match ($subcategory->slug) {
-                        'mac_change' => [
-                            ['assigned_role' => 'nodal_officer', 'priority' => 1],
+                        'mac_change', 'upgrade_downgrade' => [
+                            ['assigned_role' => 'hostmaster', 'priority' => 1],
                         ],
-                        'upgrade_downgrade', 'profile_change' => [
-                            ['assigned_role' => 'ix_processor', 'priority' => 1],
+                        'profile_change' => [
+                            ['assigned_role' => 'billing', 'priority' => 1],
                         ],
-                        default => [],
+                        default => [
+                            ['assigned_role' => 'helpdesk', 'priority' => 1],
+                        ],
                     };
 
                     foreach ($subcategoryAssignments as $assignmentData) {
@@ -167,85 +169,35 @@ class GrievanceManagementSeeder extends Seeder
             }
         }
 
-        // Create transfer rules (migrate from TicketAssignmentService logic)
+        GrievanceAssignment::whereIn('assigned_role', [
+            'nodal_officer', 'ix_account', 'ix_head', 'ix_processor', 'ix_tech_team', 'ceo',
+        ])->delete();
+
+        GrievanceTransferRule::query()->where(function ($q): void {
+            $legacy = ['nodal_officer', 'ix_account', 'ix_head', 'ix_processor', 'ix_tech_team', 'ceo'];
+            $q->whereIn('from_role', $legacy)->orWhereIn('to_role', $legacy);
+        })->delete();
+
+        // IRINN: each role can forward to the other two (applies to all categories when category_id is null).
         $transferRules = [
-            // Nodal Officer transfers
-            ['from_role' => 'nodal_officer', 'to_role' => 'ix_head', 'category_id' => GrievanceCategory::where('slug', 'network_connectivity')->first()?->id, 'subcategory_id' => null],
-            ['from_role' => 'nodal_officer', 'to_role' => 'ix_head', 'category_id' => GrievanceCategory::where('slug', 'request')->first()?->id, 'subcategory_id' => GrievanceSubcategory::where('slug', 'mac_change')->first()?->id],
-
-            // IX Account transfers
-            ['from_role' => 'ix_account', 'to_role' => 'ceo', 'category_id' => GrievanceCategory::where('slug', 'billing')->first()?->id, 'subcategory_id' => null],
-            ['from_role' => 'ix_account', 'to_role' => 'ix_head', 'category_id' => GrievanceCategory::where('slug', 'billing')->first()?->id, 'subcategory_id' => null],
-
-            // IX Processor transfers
-            ['from_role' => 'ix_processor', 'to_role' => 'ceo', 'category_id' => GrievanceCategory::where('slug', 'request')->first()?->id, 'subcategory_id' => GrievanceSubcategory::where('slug', 'upgrade_downgrade')->first()?->id],
-            ['from_role' => 'ix_processor', 'to_role' => 'ix_head', 'category_id' => GrievanceCategory::where('slug', 'request')->first()?->id, 'subcategory_id' => GrievanceSubcategory::where('slug', 'upgrade_downgrade')->first()?->id],
-            ['from_role' => 'ix_processor', 'to_role' => 'ceo', 'category_id' => GrievanceCategory::where('slug', 'request')->first()?->id, 'subcategory_id' => GrievanceSubcategory::where('slug', 'profile_change')->first()?->id],
-            ['from_role' => 'ix_processor', 'to_role' => 'ix_head', 'category_id' => GrievanceCategory::where('slug', 'request')->first()?->id, 'subcategory_id' => GrievanceSubcategory::where('slug', 'profile_change')->first()?->id],
-
-            // IX Head transfers (can transfer to multiple roles)
-            ['from_role' => 'ix_head', 'to_role' => 'ix_account', 'category_id' => GrievanceCategory::where('slug', 'network_connectivity')->first()?->id, 'subcategory_id' => null],
-            ['from_role' => 'ix_head', 'to_role' => 'ix_tech_team', 'category_id' => GrievanceCategory::where('slug', 'network_connectivity')->first()?->id, 'subcategory_id' => null],
-            ['from_role' => 'ix_head', 'to_role' => 'nodal_officer', 'category_id' => GrievanceCategory::where('slug', 'network_connectivity')->first()?->id, 'subcategory_id' => null],
-            ['from_role' => 'ix_head', 'to_role' => 'ix_account', 'category_id' => GrievanceCategory::where('slug', 'billing')->first()?->id, 'subcategory_id' => null],
-            ['from_role' => 'ix_head', 'to_role' => 'ix_tech_team', 'category_id' => GrievanceCategory::where('slug', 'billing')->first()?->id, 'subcategory_id' => null],
-            ['from_role' => 'ix_head', 'to_role' => 'nodal_officer', 'category_id' => GrievanceCategory::where('slug', 'billing')->first()?->id, 'subcategory_id' => null],
-            ['from_role' => 'ix_head', 'to_role' => 'ix_processor', 'category_id' => GrievanceCategory::where('slug', 'billing')->first()?->id, 'subcategory_id' => null],
-            ['from_role' => 'ix_head', 'to_role' => 'ceo', 'category_id' => GrievanceCategory::where('slug', 'billing')->first()?->id, 'subcategory_id' => null],
-            ['from_role' => 'ix_head', 'to_role' => 'ix_account', 'category_id' => GrievanceCategory::where('slug', 'request')->first()?->id, 'subcategory_id' => GrievanceSubcategory::where('slug', 'mac_change')->first()?->id],
-            ['from_role' => 'ix_head', 'to_role' => 'ix_tech_team', 'category_id' => GrievanceCategory::where('slug', 'request')->first()?->id, 'subcategory_id' => GrievanceSubcategory::where('slug', 'mac_change')->first()?->id],
-            ['from_role' => 'ix_head', 'to_role' => 'nodal_officer', 'category_id' => GrievanceCategory::where('slug', 'request')->first()?->id, 'subcategory_id' => GrievanceSubcategory::where('slug', 'mac_change')->first()?->id],
-            ['from_role' => 'ix_head', 'to_role' => 'ix_account', 'category_id' => GrievanceCategory::where('slug', 'request')->first()?->id, 'subcategory_id' => GrievanceSubcategory::where('slug', 'upgrade_downgrade')->first()?->id],
-            ['from_role' => 'ix_head', 'to_role' => 'ix_tech_team', 'category_id' => GrievanceCategory::where('slug', 'request')->first()?->id, 'subcategory_id' => GrievanceSubcategory::where('slug', 'upgrade_downgrade')->first()?->id],
-            ['from_role' => 'ix_head', 'to_role' => 'nodal_officer', 'category_id' => GrievanceCategory::where('slug', 'request')->first()?->id, 'subcategory_id' => GrievanceSubcategory::where('slug', 'upgrade_downgrade')->first()?->id],
-            ['from_role' => 'ix_head', 'to_role' => 'ix_processor', 'category_id' => GrievanceCategory::where('slug', 'request')->first()?->id, 'subcategory_id' => GrievanceSubcategory::where('slug', 'upgrade_downgrade')->first()?->id],
-            ['from_role' => 'ix_head', 'to_role' => 'ceo', 'category_id' => GrievanceCategory::where('slug', 'request')->first()?->id, 'subcategory_id' => GrievanceSubcategory::where('slug', 'upgrade_downgrade')->first()?->id],
-            ['from_role' => 'ix_head', 'to_role' => 'ix_account', 'category_id' => GrievanceCategory::where('slug', 'request')->first()?->id, 'subcategory_id' => GrievanceSubcategory::where('slug', 'profile_change')->first()?->id],
-            ['from_role' => 'ix_head', 'to_role' => 'ix_tech_team', 'category_id' => GrievanceCategory::where('slug', 'request')->first()?->id, 'subcategory_id' => GrievanceSubcategory::where('slug', 'profile_change')->first()?->id],
-            ['from_role' => 'ix_head', 'to_role' => 'nodal_officer', 'category_id' => GrievanceCategory::where('slug', 'request')->first()?->id, 'subcategory_id' => GrievanceSubcategory::where('slug', 'profile_change')->first()?->id],
-            ['from_role' => 'ix_head', 'to_role' => 'ix_processor', 'category_id' => GrievanceCategory::where('slug', 'request')->first()?->id, 'subcategory_id' => GrievanceSubcategory::where('slug', 'profile_change')->first()?->id],
-            ['from_role' => 'ix_head', 'to_role' => 'ceo', 'category_id' => GrievanceCategory::where('slug', 'request')->first()?->id, 'subcategory_id' => GrievanceSubcategory::where('slug', 'profile_change')->first()?->id],
-            ['from_role' => 'ix_head', 'to_role' => 'ix_account', 'category_id' => GrievanceCategory::where('slug', 'feedback_suggestion')->first()?->id, 'subcategory_id' => null],
-            ['from_role' => 'ix_head', 'to_role' => 'ix_tech_team', 'category_id' => GrievanceCategory::where('slug', 'feedback_suggestion')->first()?->id, 'subcategory_id' => null],
-            ['from_role' => 'ix_head', 'to_role' => 'nodal_officer', 'category_id' => GrievanceCategory::where('slug', 'feedback_suggestion')->first()?->id, 'subcategory_id' => null],
-            ['from_role' => 'ix_head', 'to_role' => 'ix_processor', 'category_id' => GrievanceCategory::where('slug', 'feedback_suggestion')->first()?->id, 'subcategory_id' => null],
-            ['from_role' => 'ix_head', 'to_role' => 'ceo', 'category_id' => GrievanceCategory::where('slug', 'feedback_suggestion')->first()?->id, 'subcategory_id' => null],
-            ['from_role' => 'ix_head', 'to_role' => 'ix_account', 'category_id' => GrievanceCategory::where('slug', 'other')->first()?->id, 'subcategory_id' => null],
-            ['from_role' => 'ix_head', 'to_role' => 'ix_tech_team', 'category_id' => GrievanceCategory::where('slug', 'other')->first()?->id, 'subcategory_id' => null],
-            ['from_role' => 'ix_head', 'to_role' => 'nodal_officer', 'category_id' => GrievanceCategory::where('slug', 'other')->first()?->id, 'subcategory_id' => null],
-            ['from_role' => 'ix_head', 'to_role' => 'ix_processor', 'category_id' => GrievanceCategory::where('slug', 'other')->first()?->id, 'subcategory_id' => null],
-            ['from_role' => 'ix_head', 'to_role' => 'ceo', 'category_id' => GrievanceCategory::where('slug', 'other')->first()?->id, 'subcategory_id' => null],
-
-            // CEO transfers
-            ['from_role' => 'ceo', 'to_role' => 'ix_account', 'category_id' => GrievanceCategory::where('slug', 'billing')->first()?->id, 'subcategory_id' => null],
-            ['from_role' => 'ceo', 'to_role' => 'ix_tech_team', 'category_id' => GrievanceCategory::where('slug', 'billing')->first()?->id, 'subcategory_id' => null],
-            ['from_role' => 'ceo', 'to_role' => 'nodal_officer', 'category_id' => GrievanceCategory::where('slug', 'billing')->first()?->id, 'subcategory_id' => null],
-            ['from_role' => 'ceo', 'to_role' => 'ix_processor', 'category_id' => GrievanceCategory::where('slug', 'billing')->first()?->id, 'subcategory_id' => null],
-            ['from_role' => 'ceo', 'to_role' => 'ix_head', 'category_id' => GrievanceCategory::where('slug', 'billing')->first()?->id, 'subcategory_id' => null],
-            ['from_role' => 'ceo', 'to_role' => 'ix_account', 'category_id' => GrievanceCategory::where('slug', 'request')->first()?->id, 'subcategory_id' => GrievanceSubcategory::where('slug', 'upgrade_downgrade')->first()?->id],
-            ['from_role' => 'ceo', 'to_role' => 'ix_tech_team', 'category_id' => GrievanceCategory::where('slug', 'request')->first()?->id, 'subcategory_id' => GrievanceSubcategory::where('slug', 'upgrade_downgrade')->first()?->id],
-            ['from_role' => 'ceo', 'to_role' => 'nodal_officer', 'category_id' => GrievanceCategory::where('slug', 'request')->first()?->id, 'subcategory_id' => GrievanceSubcategory::where('slug', 'upgrade_downgrade')->first()?->id],
-            ['from_role' => 'ceo', 'to_role' => 'ix_processor', 'category_id' => GrievanceCategory::where('slug', 'request')->first()?->id, 'subcategory_id' => GrievanceSubcategory::where('slug', 'upgrade_downgrade')->first()?->id],
-            ['from_role' => 'ceo', 'to_role' => 'ix_head', 'category_id' => GrievanceCategory::where('slug', 'request')->first()?->id, 'subcategory_id' => GrievanceSubcategory::where('slug', 'upgrade_downgrade')->first()?->id],
-            ['from_role' => 'ceo', 'to_role' => 'ix_account', 'category_id' => GrievanceCategory::where('slug', 'request')->first()?->id, 'subcategory_id' => GrievanceSubcategory::where('slug', 'profile_change')->first()?->id],
-            ['from_role' => 'ceo', 'to_role' => 'ix_tech_team', 'category_id' => GrievanceCategory::where('slug', 'request')->first()?->id, 'subcategory_id' => GrievanceSubcategory::where('slug', 'profile_change')->first()?->id],
-            ['from_role' => 'ceo', 'to_role' => 'nodal_officer', 'category_id' => GrievanceCategory::where('slug', 'request')->first()?->id, 'subcategory_id' => GrievanceSubcategory::where('slug', 'profile_change')->first()?->id],
-            ['from_role' => 'ceo', 'to_role' => 'ix_processor', 'category_id' => GrievanceCategory::where('slug', 'request')->first()?->id, 'subcategory_id' => GrievanceSubcategory::where('slug', 'profile_change')->first()?->id],
-            ['from_role' => 'ceo', 'to_role' => 'ix_head', 'category_id' => GrievanceCategory::where('slug', 'request')->first()?->id, 'subcategory_id' => GrievanceSubcategory::where('slug', 'profile_change')->first()?->id],
+            ['from_role' => 'helpdesk', 'to_role' => 'hostmaster', 'category_id' => null, 'subcategory_id' => null],
+            ['from_role' => 'helpdesk', 'to_role' => 'billing', 'category_id' => null, 'subcategory_id' => null],
+            ['from_role' => 'hostmaster', 'to_role' => 'helpdesk', 'category_id' => null, 'subcategory_id' => null],
+            ['from_role' => 'hostmaster', 'to_role' => 'billing', 'category_id' => null, 'subcategory_id' => null],
+            ['from_role' => 'billing', 'to_role' => 'helpdesk', 'category_id' => null, 'subcategory_id' => null],
+            ['from_role' => 'billing', 'to_role' => 'hostmaster', 'category_id' => null, 'subcategory_id' => null],
         ];
 
         foreach ($transferRules as $rule) {
-            if ($rule['category_id'] && ($rule['subcategory_id'] || $rule['subcategory_id'] === null)) {
-                GrievanceTransferRule::updateOrCreate(
-                    [
-                        'from_role' => $rule['from_role'],
-                        'to_role' => $rule['to_role'],
-                        'category_id' => $rule['category_id'],
-                        'subcategory_id' => $rule['subcategory_id'],
-                    ],
-                    array_merge($rule, ['is_active' => true])
-                );
-            }
+            GrievanceTransferRule::updateOrCreate(
+                [
+                    'from_role' => $rule['from_role'],
+                    'to_role' => $rule['to_role'],
+                    'category_id' => $rule['category_id'],
+                    'subcategory_id' => $rule['subcategory_id'],
+                ],
+                array_merge($rule, ['is_active' => true])
+            );
         }
     }
 }

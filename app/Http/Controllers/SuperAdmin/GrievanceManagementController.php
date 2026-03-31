@@ -22,7 +22,11 @@ class GrievanceManagementController extends Controller
     public function index(): View
     {
         $categories = GrievanceCategory::with(['subcategories', 'assignments'])->orderBy('order')->get();
-        $roles = Role::where('is_active', true)->orderBy('name')->get();
+        $roles = Role::query()
+            ->where('is_active', true)
+            ->whereIn('slug', ['helpdesk', 'hostmaster', 'billing'])
+            ->orderBy('name')
+            ->get();
         $transferRules = GrievanceTransferRule::with(['category', 'subcategory', 'fromRole', 'toRole'])
             ->orderBy('from_role')
             ->orderBy('to_role')

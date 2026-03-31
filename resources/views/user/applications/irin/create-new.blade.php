@@ -506,8 +506,7 @@
 
                 <div class="border rounded p-3 mt-3">
                     <h6>Billing Calculation</h6>
-                    <div class="small text-muted">IPv4: 27,500 x 1.35^(log10(addresses) - 8)</div>
-                    <div class="small text-muted mb-2">IPv6: 24,199 x 1.35^(log10(addresses) - 22)</div>
+                    <div class="small text-muted mb-2">Amount is calculated by backend pricing logic from selected address count.</div>
                     <div id="resourceBillingBreakup" class="small"></div>
                     <div class="fw-bold mt-2">Final Billing Amount: <span id="finalBillingAmount">₹ 0.00</span></div>
                 </div>
@@ -725,8 +724,8 @@ const verificationState = {
     asn: { email: false, mobile: false },
     sign: { email: false, mobile: false }
 };
-const IRINN_RESUBMIT_MODE = @json(!empty($isNormalizedResubmission));
-const IRINN_PREFILL = @json($irinnNormalizedPrefill ?? []);
+const IRINN_RESUBMIT_MODE = JSON.parse(`@json(!empty($isNormalizedResubmission))`);
+const IRINN_PREFILL = JSON.parse(`@json($irinnNormalizedPrefill ?? [])`);
 if (IRINN_RESUBMIT_MODE) {
     ['mr', 'app', 'abuse', 'br', 'asn', 'sign'].forEach((k) => {
         verificationState[k] = { email: true, mobile: true };
@@ -1325,14 +1324,6 @@ function goStep(step) {
     document.getElementById('s7Badge').className = step === 7 ? 'badge bg-primary' : 'badge bg-secondary';
 }
 
-function calcIPv4Fee(addresses) {
-    return 27500 * Math.pow(1.35, Math.log10(addresses) - 8);
-}
-
-function calcIPv6Fee(addresses) {
-    return 24199 * Math.pow(1.35, Math.log10(addresses) - 22);
-}
-
 function fmtInr(v) {
     return '₹ ' + Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 });
 }
@@ -1380,11 +1371,11 @@ function updateResourceBilling() {
     let fee4 = null;
     let fee6 = null;
     if (selectedIPv4Resource) {
-        fee4 = calcIPv4Fee(Number(selectedIPv4Resource.addresses || 0));
+        fee4 = Number(selectedIPv4Resource.amount || 0);
         html += `<div>IPv4 ${selectedIPv4Resource.size}: ${fmtInr(fee4)}</div>`;
     }
     if (selectedIPv6Resource) {
-        fee6 = calcIPv6Fee(Number(selectedIPv6Resource.addresses || 0));
+        fee6 = Number(selectedIPv6Resource.amount || 0);
         html += `<div>IPv6 ${selectedIPv6Resource.size}: ${fmtInr(fee6)}</div>`;
     }
     host.innerHTML = html || '<div class="text-muted">Select at least one resource.</div>';

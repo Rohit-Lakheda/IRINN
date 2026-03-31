@@ -189,13 +189,13 @@
         </div>
     </div>
 
-    <!-- IX Applications & Payment Status -->
+    <!-- IRINN Applications & Payment Status -->
     @if(isset($ixApplications) && $ixApplications->count() > 0)
     <div class="row mt-4">
         <div class="col-12">
             <div class="card border-0 shadow-sm" style="border-radius: 16px;">
                 <div class="card-header bg-success text-white" style="border-radius: 16px 16px 0 0;">
-                    <h5 class="mb-0" style="font-weight: 600;">IX Applications ({{ $ixApplications->count() }})</h5>
+                    <h5 class="mb-0" style="font-weight: 600;">IRINN Applications ({{ $ixApplications->count() }})</h5>
                 </div>
                 <div class="card-body p-4">
                     <div class="table-responsive">

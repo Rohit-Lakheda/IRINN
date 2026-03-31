@@ -55,23 +55,32 @@ class IpPricingController extends Controller
             $request->validate([
                 'ip_type' => 'required|in:ipv4,ipv6',
                 'size' => 'required|string',
-                'addresses' => 'required|integer|min:1',
-                'amount' => 'required|numeric|min:0',
-                'gst_percentage' => 'nullable|numeric|min:0|max:100',
+                'addresses' => ['required', 'string', 'regex:/^\d{1,39}$/'],
                 'igst' => 'nullable|numeric|min:0',
                 'cgst' => 'nullable|numeric|min:0',
                 'sgst' => 'nullable|numeric|min:0',
-                'price' => 'required|numeric|min:0',
                 'effective_from' => 'nullable|date',
                 'effective_until' => 'nullable|date|after_or_equal:effective_from',
                 'is_active' => 'boolean',
             ]);
 
+            $normalizedAddresses = IpPricing::normalizeAddresses($request->addresses);
+            if ($normalizedAddresses === null || $normalizedAddresses === '0') {
+                return back()->withErrors(['addresses' => 'Addresses must be a valid number greater than zero.'])->withInput();
+            }
+
+            $computedAmount = IpPricing::calculateAmountFromAddresses($request->ip_type, $normalizedAddresses);
+            $igstPercent = (float) ($request->igst ?? 0);
+            $cgstPercent = (float) ($request->cgst ?? 0);
+            $sgstPercent = (float) ($request->sgst ?? 0);
+            $effectiveTaxPercent = $igstPercent > 0 ? $igstPercent : ($cgstPercent + $sgstPercent);
+            $computedPrice = round($computedAmount + (($computedAmount * $effectiveTaxPercent) / 100), 2);
+
             $paymentType = PaymentType::where('slug', 'ip-pricing')->first();
 
             // Normalize effective_from date
             $effectiveFrom = $request->effective_from ?: now()->toDateString();
-            
+
             // Ensure date is in correct format (Y-m-d)
             if ($effectiveFrom instanceof \Carbon\Carbon) {
                 $effectiveFrom = $effectiveFrom->format('Y-m-d');
@@ -98,13 +107,13 @@ class IpPricingController extends Controller
                     'effective_from' => $effectiveFrom,
                 ],
                 [
-                    'addresses' => (int) $request->addresses,
-                    'amount' => (float) $request->amount,
-                    'gst_percentage' => $request->gst_percentage ? (float) $request->gst_percentage : null,
-                    'igst' => $request->igst ? (float) $request->igst : null,
-                    'cgst' => $request->cgst ? (float) $request->cgst : null,
-                    'sgst' => $request->sgst ? (float) $request->sgst : null,
-                    'price' => (float) $request->price,
+                    'addresses' => $normalizedAddresses,
+                    'amount' => $computedAmount,
+                    'gst_percentage' => null,
+                    'igst' => $igstPercent > 0 ? $igstPercent : null,
+                    'cgst' => $cgstPercent > 0 ? $cgstPercent : null,
+                    'sgst' => $sgstPercent > 0 ? $sgstPercent : null,
+                    'price' => $computedPrice,
                     'effective_from' => $effectiveFrom,
                     'effective_until' => $request->effective_until ?: null,
                     'payment_type_id' => $paymentType->id ?? null,
@@ -130,6 +139,7 @@ class IpPricingController extends Controller
                 ->with('success', 'IP pricing saved successfully.');
         } catch (\Illuminate\Validation\ValidationException $e) {
             Log::error('Validation error storing IP pricing: '.json_encode($e->errors()));
+
             return back()->withErrors($e->errors())->withInput();
         } catch (Exception $e) {
             Log::error('Error storing IP pricing: '.$e->getMessage());
@@ -162,26 +172,35 @@ class IpPricingController extends Controller
             ]);
 
             $request->validate([
-                'addresses' => 'required|integer|min:1',
-                'amount' => 'required|numeric|min:0',
-                'gst_percentage' => 'nullable|numeric|min:0|max:100',
+                'addresses' => ['required', 'string', 'regex:/^\d{1,39}$/'],
                 'igst' => 'nullable|numeric|min:0',
                 'cgst' => 'nullable|numeric|min:0',
                 'sgst' => 'nullable|numeric|min:0',
-                'price' => 'required|numeric|min:0',
                 'effective_from' => 'nullable|date',
                 'effective_until' => 'nullable|date|after_or_equal:effective_from',
                 'is_active' => 'boolean',
             ]);
 
+            $normalizedAddresses = IpPricing::normalizeAddresses($request->addresses);
+            if ($normalizedAddresses === null || $normalizedAddresses === '0') {
+                return back()->withErrors(['addresses' => 'Addresses must be a valid number greater than zero.'])->withInput();
+            }
+
+            $computedAmount = IpPricing::calculateAmountFromAddresses($pricing->ip_type, $normalizedAddresses);
+            $igstPercent = (float) ($request->igst ?? 0);
+            $cgstPercent = (float) ($request->cgst ?? 0);
+            $sgstPercent = (float) ($request->sgst ?? 0);
+            $effectiveTaxPercent = $igstPercent > 0 ? $igstPercent : ($cgstPercent + $sgstPercent);
+            $computedPrice = round($computedAmount + (($computedAmount * $effectiveTaxPercent) / 100), 2);
+
             $updateData = [
-                'addresses' => (int) $request->addresses,
-                'amount' => (float) $request->amount,
-                'gst_percentage' => $request->gst_percentage ? (float) $request->gst_percentage : null,
-                'igst' => $request->igst ? (float) $request->igst : null,
-                'cgst' => $request->cgst ? (float) $request->cgst : null,
-                'sgst' => $request->sgst ? (float) $request->sgst : null,
-                'price' => (float) $request->price,
+                'addresses' => $normalizedAddresses,
+                'amount' => $computedAmount,
+                'gst_percentage' => null,
+                'igst' => $igstPercent > 0 ? $igstPercent : null,
+                'cgst' => $cgstPercent > 0 ? $cgstPercent : null,
+                'sgst' => $sgstPercent > 0 ? $sgstPercent : null,
+                'price' => $computedPrice,
                 'effective_until' => $request->effective_until ?: null,
             ];
 

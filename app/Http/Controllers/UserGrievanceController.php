@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\GrievanceCategory;
 use App\Models\Registration;
 use App\Models\Ticket;
 use App\Models\TicketAttachment;
@@ -13,6 +12,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
@@ -32,7 +32,7 @@ class UserGrievanceController extends Controller
         }
 
         $categories = TicketAssignmentService::getCategories();
-        
+
         // Get all categories with subcategories for JavaScript
         $categoriesWithSubcategories = \App\Models\GrievanceCategory::active()
             ->with(['activeSubcategories'])
@@ -42,6 +42,7 @@ class UserGrievanceController extends Controller
                 $subcategories = $category->activeSubcategories->mapWithKeys(function ($subcategory) {
                     return [$subcategory->slug => $subcategory->name];
                 })->toArray();
+
                 return [$category->slug => $subcategories];
             })
             ->toArray();
@@ -62,8 +63,11 @@ class UserGrievanceController extends Controller
                 ->with('error', 'User session expired. Please login again.');
         }
 
+        $categories = TicketAssignmentService::getCategories();
+        $allowedCategorySlugs = array_keys($categories);
+
         $validated = $request->validate([
-            'category' => 'required|in:network_connectivity,billing,request,feedback_suggestion,other',
+            'category' => ['required', 'string', Rule::in($allowedCategorySlugs)],
             'sub_category' => 'nullable|string|max:255',
             'subject' => 'nullable|string|max:255',
             'description' => 'required|string|min:10',

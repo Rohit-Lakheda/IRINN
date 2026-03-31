@@ -41,6 +41,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use PDOException;
 
@@ -3517,6 +3518,68 @@ class AdminController extends Controller
     /**
      * IRINN Billing: update discount % on application (applies to all future annual invoices).
      */
+    /**
+     * IRINN Hostmaster: confirm resource allocation and effective date (used for annual billing PDF / prerequisites).
+     */
+    public function irinnHostmasterAllocateResources(Request $request, $id): RedirectResponse
+    {
+        try {
+            $admin = $this->getCurrentAdmin();
+            $application = Application::query()->findOrFail($id);
+
+            if ($application->application_type !== 'IRINN') {
+                return back()->with('error', 'This action is only for IRINN applications.');
+            }
+
+            if (session('admin_selected_role') !== 'hostmaster') {
+                return back()->with('error', 'Only the hostmaster role can confirm resource allocation.');
+            }
+
+            if (($application->status ?? '') !== 'billing_approved') {
+                return back()->with('error', 'Resource allocation is available only after billing approval.');
+            }
+
+            $allocated = $request->boolean('irinn_resources_allocated');
+
+            $validated = $request->validate([
+                'billing_anchor_date' => ['nullable', 'date', Rule::requiredIf($allocated)],
+            ]);
+
+            $application->update([
+                'irinn_resources_allocated' => $allocated,
+                'billing_anchor_date' => $allocated ? $validated['billing_anchor_date'] : null,
+            ]);
+
+            AdminAction::log(
+                $admin->id,
+                'irinn_hostmaster_allocate',
+                $application,
+                ($allocated ? 'Confirmed IRINN resource allocation' : 'Cleared IRINN resource allocation')
+                    .($application->billing_anchor_date ? ' (effective '.$application->billing_anchor_date->format('Y-m-d').')' : ''),
+                ['user_id' => $application->user_id]
+            );
+
+            if ($allocated && $application->billing_anchor_date) {
+                ApplicationStatusHistory::log(
+                    $application->id,
+                    (string) $application->status,
+                    (string) $application->status,
+                    'admin',
+                    $admin->id,
+                    'IRINN resources allocated (effective date: '.$application->billing_anchor_date->format('d M Y').').'
+                );
+            }
+
+            return back()->with('success', $allocated ? 'Resource allocation saved.' : 'Resource allocation cleared.');
+        } catch (ValidationException $e) {
+            return back()->withErrors($e->errors())->withInput();
+        } catch (Exception $e) {
+            Log::error('irinnHostmasterAllocateResources: '.$e->getMessage());
+
+            return back()->with('error', 'Unable to save allocation.');
+        }
+    }
+
     public function irinnBillingUpdateDiscount(Request $request, $id): RedirectResponse
     {
         try {
@@ -4623,15 +4686,31 @@ class AdminController extends Controller
                 unset($newKycDetails['primary_address']);
             }
 
-            // Replace all old GST data with new GST data in kyc_details
-            $application->kyc_details = $newKycDetails;
+            if ($application->application_type === 'IRINN') {
+                // IRINN portal: GST details live on application columns (no user KYC profile dependency).
+                $gstVerification = null;
+                if ($gstRequest->gst_verification_id) {
+                    $gstVerification = GstVerification::find($gstRequest->gst_verification_id);
+                }
 
-            // Update application_data GSTIN - replace old with new
-            $applicationData = is_array($application->application_data) ? $application->application_data : [];
-            $applicationData['gstin'] = $gstRequest->new_gstin;
-            $application->application_data = $applicationData;
+                $application->irinn_has_gst_number = true;
+                $application->irinn_billing_gstin = $gstRequest->new_gstin;
+                $application->irinn_billing_legal_name = $newKycDetails['legal_name'] ?? null;
+                $application->irinn_billing_pan = $gstVerification?->pan ?? null;
+                $application->irinn_billing_address = $newKycDetails['billing_address'] ?? null;
+                $application->irinn_billing_postcode = $newKycDetails['billing_pincode'] ?? null;
+                $application->save();
+            } else {
+                // Replace all old GST data with new GST data in kyc_details
+                $application->kyc_details = $newKycDetails;
 
-            $application->save();
+                // Update application_data GSTIN - replace old with new
+                $applicationData = is_array($application->application_data) ? $application->application_data : [];
+                $applicationData['gstin'] = $gstRequest->new_gstin;
+                $application->application_data = $applicationData;
+
+                $application->save();
+            }
 
             // Log GST change history
             ApplicationGstChangeHistory::log(
@@ -4644,6 +4723,16 @@ class AdminController extends Controller
                 'admin',
                 $adminId,
                 'GST update approved by admin'
+            );
+
+            // Add to user-facing activity log (status history)
+            \App\Models\ApplicationStatusHistory::log(
+                $application->id,
+                (string) ($application->status ?? ''),
+                (string) ($application->status ?? ''),
+                'admin',
+                $adminId,
+                "GST update approved: {$gstRequest->old_gstin} -> {$gstRequest->new_gstin}"
             );
 
             // Update request status
@@ -4716,6 +4805,16 @@ class AdminController extends Controller
                 'reviewed_at' => now('Asia/Kolkata'),
                 'admin_notes' => $validated['admin_notes'],
             ]);
+
+            // Add to user-facing activity log (status history)
+            \App\Models\ApplicationStatusHistory::log(
+                $gstRequest->application->id,
+                (string) ($gstRequest->application->status ?? ''),
+                (string) ($gstRequest->application->status ?? ''),
+                'admin',
+                $adminId,
+                "GST update rejected: {$gstRequest->old_gstin} -> {$gstRequest->new_gstin}"
+            );
 
             // Log admin action
             AdminAction::log(

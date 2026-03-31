@@ -7,7 +7,7 @@
     <!-- Page Header -->
     <div class="mb-4">
         <h2 class="mb-1 fw-semibold text-navy border-0">All Applications</h2>
-        <p class="text-muted mb-0">View and manage all IX applications</p>
+        <p class="text-muted mb-0">View and manage all IRINN applications</p>
         <div class="accent-line"></div>
     </div>
     <div class="accent-line"></div>

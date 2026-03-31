@@ -107,10 +107,10 @@
                                     @if($ticket->escalation_level !== 'none')
                                     <br>
                                     <span class="badge bg-danger mt-1">
-                                        @if($ticket->escalation_level === 'ix_head')
-                                            ⚠️ Escalated to IX Head
-                                        @elseif($ticket->escalation_level === 'ceo')
-                                            🔴 Escalated to CEO
+                                            @if($ticket->escalation_level === 'ix_head')
+                                                ⚠️ Escalated to Level 1 role
+                                            @elseif($ticket->escalation_level === 'ceo')
+                                                🔴 Escalated to Level 2 role
                                         @endif
                                     </span>
                                     @endif

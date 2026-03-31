@@ -163,6 +163,26 @@ class ApplicationStatusHistory extends Model
             if (stripos($notes, 'resubmission') !== false || stripos($notes, 'resubmit') !== false) {
                 return 'Resubmission update';
             }
+
+            if (stripos($notes, 'GST update requested') !== false || stripos($notes, 'GST update submitted') !== false) {
+                return 'GST Update Requested';
+            }
+
+            if (stripos($notes, 'GST update approved') !== false) {
+                return 'GST Update Approved';
+            }
+
+            if (stripos($notes, 'GST update rejected') !== false) {
+                return 'GST Update Rejected';
+            }
+
+            if (stripos($notes, 'GST updated') !== false) {
+                return 'GST Updated';
+            }
+
+            if (stripos($notes, 'GST re-verified') !== false) {
+                return 'GST Updated';
+            }
         }
 
         $applicationType = $this->application->application_type ?? null;
